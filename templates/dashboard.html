@@ -126,6 +126,7 @@
                                     <th>Date</th>
                                     <th>Template</th>
                                     <th>Printer</th>
+                                    <th>User</th>
                                     <th>Quantity</th>
                                     <th>Status</th>
                                 </tr>
@@ -138,11 +139,15 @@
                                     </td>
                                     <td>
                                         <i class="bi bi-file-earmark-text"></i>
-                                        {{ item.template_name|default('Unknown') }}
+                                        {{ item.template_metadata.name|default(item.template)|default('Unknown') }}
                                     </td>
                                     <td>
                                         <i class="bi bi-printer"></i>
                                         {{ item.printer_name|default('Unknown') }}
+                                    </td>
+                                    <td>
+                                        <i class="bi bi-person"></i>
+                                        {{ item.user|default('Unknown') }}
                                     </td>
                                     <td>
                                         <span class="badge bg-secondary">{{ item.quantity|default(1) }}</span>

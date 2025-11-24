@@ -69,6 +69,7 @@ def print_label():
         variables = data.get('variables', {})
         quantity = data.get('quantity', 1)
         generate_preview = data.get('generate_preview', True)
+        preview_filename_provided = data.get('preview_filename')  # NEW: Accept existing preview
         
         # Validate required fields
         if not template_name:
@@ -141,33 +142,50 @@ def print_label():
                 'error': f"Error rendering template: {str(e)}"
             }), 400
         
-        # Step 5: Generate preview (if requested)
+        # Step 5: Generate or reuse preview (if requested)
         preview_url = None
         preview_filename = None
         
         if generate_preview:
-            try:
-                dpi = data.get('dpi') or printer.get('dpi', 203)
-                
-                success, filename, error_msg = preview_generator.save_preview(
-                    rendered_zpl,
-                    filename=None,
-                    label_size=label_size,
-                    dpi=dpi,
-                    format='png'
-                )
-                
-                if success:
-                    preview_url = f"/api/preview/{filename}"
-                    preview_filename = filename
-                    logger.info(f"Generated preview: {filename}")
+            # Check if preview was already generated and provided
+            if preview_filename_provided:
+                # Verify the preview file exists
+                if preview_generator.preview_exists(preview_filename_provided):
+                    preview_filename = preview_filename_provided
+                    preview_url = f"/api/preview/{preview_filename}"
+                    logger.info(f"✅ REUSING existing preview: {preview_filename} (no Labelary API call)")
                 else:
-                    # Log warning but don't fail the print job
-                    logger.warning(f"Failed to generate preview: {error_msg}")
+                    logger.warning(f"❌ Provided preview '{preview_filename_provided}' not found, generating new one")
+                    preview_filename_provided = None  # Fall through to generation
+            else:
+                logger.warning(f"⚠️ No preview_filename provided in request - will generate new preview")
+            
+            # Only generate if no valid preview was provided
+            if not preview_filename_provided:
+                try:
+                    dpi = data.get('dpi') or printer.get('dpi', 203)
                     
-            except Exception as e:
-                # Log error but don't fail the print job
-                logger.error(f"Error generating preview: {str(e)}")
+                    logger.info(f"🔄 Generating NEW preview at {dpi} DPI for {label_size} label (Labelary API call)")
+                    
+                    success, filename, error_msg = preview_generator.save_preview(
+                        rendered_zpl,
+                        filename=None,
+                        label_size=label_size,
+                        dpi=dpi,
+                        format='png'
+                    )
+                    
+                    if success:
+                        preview_url = f"/api/preview/{filename}"
+                        preview_filename = filename
+                        logger.info(f"✅ Generated new preview: {filename} at {dpi} DPI")
+                    else:
+                        # Log warning but don't fail the print job
+                        logger.warning(f"❌ Failed to generate preview: {error_msg}")
+                        
+                except Exception as e:
+                    # Log error but don't fail the print job
+                    logger.error(f"Error generating preview: {str(e)}")
         
         # Step 6: Create and execute print job (with history logging)
         job = PrintJob(

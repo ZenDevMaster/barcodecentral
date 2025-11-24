@@ -1,6 +1,6 @@
 [Unit]
 Description=Barcode Central Label Printing Service
-Documentation=https://github.com/your-org/barcode-central
+Documentation=https://github.com/ZenDevMaster/barcodecentral
 After=network.target
 
 [Service]

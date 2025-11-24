@@ -92,6 +92,9 @@
                         <button type="submit" class="btn btn-success w-100 mb-2">
                             <i class="bi bi-printer-fill"></i> Print Labels
                         </button>
+                        <button type="button" class="btn btn-warning w-100 mb-2" id="generatePdfBtn">
+                            <i class="bi bi-file-pdf"></i> Generate PDF of Label
+                        </button>
                         <a href="{{ url_for('web.dashboard') }}" class="btn btn-secondary w-100">
                             <i class="bi bi-x-circle"></i> Cancel
                         </a>
@@ -142,6 +145,9 @@
                 <div id="printJobDetails"></div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-warning" id="downloadPdfBtn" style="display: none;">
+                    <i class="bi bi-file-pdf"></i> Download PDF
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <a href="{{ url_for('web.history') }}" class="btn btn-primary">View History</a>
                 <button type="button" class="btn btn-success" id="printAnotherBtn">Print Another</button>
@@ -158,6 +164,8 @@
 $(document).ready(function() {
     let currentTemplate = null;
     let previewDebounceTimer = null;
+    let currentPreviewFilename = null;  // Track the current preview filename
+    let isReprintSetup = false;  // Flag to prevent auto-preview during reprint setup
 
     // Template selection handler
     $('#templateSelect').on('change', function() {
@@ -191,8 +199,10 @@ $(document).ready(function() {
         // Check printer compatibility
         checkPrinterCompatibility();
         
-        // Generate initial preview
-        generatePreview();
+        // Generate initial preview (unless we're in reprint setup mode)
+        if (!isReprintSetup) {
+            generatePreview();
+        }
     });
 
     // Printer selection handler
@@ -213,6 +223,57 @@ $(document).ready(function() {
         generatePreview();
     });
 
+    // PDF Generation button
+    $('#generatePdfBtn').on('click', async function() {
+        const templateName = $('#templateSelect').val();
+        
+        if (!templateName) {
+            showToast('Please select a template first', 'warning');
+            return;
+        }
+        
+        const formData = {
+            template: templateName,
+            variables: {},
+            format: 'pdf'
+        };
+        
+        // Collect variable values
+        $('.variable-input').each(function() {
+            const varName = $(this).data('variable');
+            formData.variables[varName] = $(this).val() || `Sample ${varName}`;
+        });
+        
+        try {
+            const $btn = $(this);
+            $btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Generating PDF...');
+            
+            const response = await fetch('/api/preview/pdf', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.preview_url) {
+                    // Open PDF in new tab
+                    window.open(data.preview_url, '_blank');
+                    showToast('PDF generated successfully!', 'success');
+                }
+            } else {
+                const data = await response.json();
+                showToast('Error generating PDF: ' + (data.error || 'Unknown error'), 'danger');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'danger');
+        } finally {
+            $(this).prop('disabled', false).html('<i class="bi bi-file-pdf"></i> Generate PDF of Label');
+        }
+    });
+
     // Form submission
     $('#printForm').on('submit', async function(e) {
         e.preventDefault();
@@ -229,8 +290,12 @@ $(document).ready(function() {
             printer_id: printerId,
             quantity: parseInt($('#quantity').val()),
             variables: {},
-            generate_preview: true
+            generate_preview: true,
+            preview_filename: currentPreviewFilename  // CRITICAL: Pass existing preview to reuse it
         };
+        
+        // Debug logging
+        console.log('[DEBUG] Print submission - currentPreviewFilename:', currentPreviewFilename);
 
         // Collect variable values
         $('.variable-input').each(function() {
@@ -266,6 +331,8 @@ $(document).ready(function() {
         $('#variablesCard').hide();
         $('#previewContent').empty();
         $('#previewPlaceholder').show();
+        currentPreviewFilename = null;  // CRITICAL: Reset preview filename for new print job
+        console.log('[DEBUG] Reset currentPreviewFilename on Print Another');
     });
 
     // Generate variable fields
@@ -346,8 +413,10 @@ $(document).ready(function() {
             if (response.ok) {
                 const data = await response.json();
                 if (data.preview_url) {
+                    // Store the preview filename for reuse during print
+                    currentPreviewFilename = data.filename;
                     $('#previewContent').html(`
-                        <img src="${data.preview_url}" class="img-fluid" alt="Label Preview" 
+                        <img src="${data.preview_url}" class="img-fluid" alt="Label Preview"
                              style="max-width: 100%; border: 1px solid #ddd; border-radius: 5px;">
                     `);
                 }
@@ -373,12 +442,204 @@ $(document).ready(function() {
             </ul>
         `;
         $('#printJobDetails').html(details);
+        
+        // Setup PDF download button if preview was generated
+        if (data.preview_url) {
+            // Generate PDF URL by requesting PDF format for the same template/variables
+            $('#downloadPdfBtn').show().off('click').on('click', async function() {
+                try {
+                    const $btn = $(this);
+                    $btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Generating...');
+                    
+                    // Collect current variables
+                    const variables = {};
+                    $('.variable-input').each(function() {
+                        const varName = $(this).data('variable');
+                        variables[varName] = $(this).val();
+                    });
+                    
+                    const response = await fetch('/api/preview/pdf', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            template: data.template,
+                            variables: variables,
+                            format: 'pdf'
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const pdfData = await response.json();
+                        if (pdfData.preview_url) {
+                            window.open(pdfData.preview_url, '_blank');
+                        }
+                    } else {
+                        showToast('Error generating PDF', 'danger');
+                    }
+                } catch (error) {
+                    showToast('Error: ' + error.message, 'danger');
+                } finally {
+                    $(this).prop('disabled', false).html('<i class="bi bi-file-pdf"></i> Download PDF');
+                }
+            });
+        } else {
+            $('#downloadPdfBtn').hide();
+        }
+        
         $('#successModal').modal('show');
     }
 
-    // Auto-select template if provided in URL
+    // Toast notification helper
+    function showToast(message, type = 'info') {
+        // Simple alert for now - can be enhanced with Bootstrap toast
+        const alertClass = type === 'success' ? 'alert-success' :
+                          type === 'danger' ? 'alert-danger' :
+                          type === 'warning' ? 'alert-warning' : 'alert-info';
+        
+        const toast = $(`
+            <div class="alert ${alertClass} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3"
+                 role="alert" style="z-index: 9999; min-width: 300px;">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `);
+        
+        $('body').append(toast);
+        setTimeout(() => toast.alert('close'), 5000);
+    }
+
+    // Handle reprint data from sessionStorage FIRST (before URL template)
+    console.log('[REPRINT] Checking for reprint data in sessionStorage...');
+    const reprintDataStr = sessionStorage.getItem('reprintData');
+    console.log('[REPRINT] SessionStorage content:', reprintDataStr);
+    let isReprinting = false;
+    
+    if (reprintDataStr) {
+        try {
+            const reprintData = JSON.parse(reprintDataStr);
+            console.log('[REPRINT] Loading reprint data:', reprintData);
+            isReprinting = true;
+            isReprintSetup = true;  // Set flag to prevent auto-preview
+            
+            // Clear sessionStorage immediately to prevent reuse
+            sessionStorage.removeItem('reprintData');
+            
+            // Auto-select template (use filename, not display name)
+            if (reprintData.template) {
+                $('#templateSelect').val(reprintData.template).trigger('change');
+            }
+            
+            // Wait for template to load and variable fields to be generated
+            setTimeout(() => {
+                // Auto-select printer
+                if (reprintData.printerId) {
+                    $('#printerSelect').val(reprintData.printerId);
+                    console.log('[REPRINT] Selected printer:', reprintData.printerId);
+                }
+                
+                // Auto-populate quantity
+                if (reprintData.quantity) {
+                    $('#quantity').val(reprintData.quantity);
+                }
+                
+                // Auto-populate variable fields
+                console.log('[REPRINT] About to populate variables...');
+                console.log('[REPRINT] reprintData.variables:', reprintData.variables);
+                console.log('[REPRINT] Type:', typeof reprintData.variables);
+                console.log('[REPRINT] Is object?:', typeof reprintData.variables === 'object');
+                console.log('[REPRINT] Is truthy?:', !!reprintData.variables);
+                
+                if (reprintData.variables && typeof reprintData.variables === 'object') {
+                    const varKeys = Object.keys(reprintData.variables);
+                    console.log('[REPRINT] Variable keys:', varKeys);
+                    console.log('[REPRINT] Number of variables:', varKeys.length);
+                    
+                    varKeys.forEach(varName => {
+                        const fieldId = `var_${varName}`;
+                        const $field = $(`#${fieldId}`);
+                        const value = reprintData.variables[varName];
+                        
+                        console.log(`[REPRINT] Processing ${varName}:`);
+                        console.log(`  - Field ID: ${fieldId}`);
+                        console.log(`  - Field exists: ${$field.length > 0}`);
+                        console.log(`  - Value: ${value}`);
+                        
+                        if ($field.length) {
+                            $field.val(value);
+                            console.log(`  ✓ Set ${varName} = ${value}`);
+                        } else {
+                            console.warn(`  ✗ Field not found: ${fieldId}`);
+                            // List all variable input fields that DO exist
+                            const existingFields = $('.variable-input').map(function() {
+                                return $(this).attr('id');
+                            }).get();
+                            console.warn(`  Available fields:`, existingFields);
+                        }
+                    });
+                } else {
+                    console.error('[REPRINT] Variables not valid:', {
+                        variables: reprintData.variables,
+                        type: typeof reprintData.variables,
+                        isObject: typeof reprintData.variables === 'object',
+                        isTruthy: !!reprintData.variables
+                    });
+                }
+                
+                // Try to load existing preview
+                setTimeout(() => {
+                    console.log('[REPRINT] Preview filename from history:', reprintData.previewFilename);
+                    console.log('[REPRINT] isReprintSetup flag:', isReprintSetup);
+                    
+                    // Try to load existing preview if available
+                    if (reprintData.previewFilename) {
+                        console.log('[REPRINT] Attempting to load existing preview:', reprintData.previewFilename);
+                        const previewUrl = `/api/preview/${reprintData.previewFilename}`;
+                        console.log('[REPRINT] Preview URL:', previewUrl);
+                        
+                        // Try to load the image directly
+                        const img = new Image();
+                        
+                        img.onload = function() {
+                            console.log('[REPRINT] ✓ Existing preview loaded successfully');
+                            currentPreviewFilename = reprintData.previewFilename;
+                            $('#previewPlaceholder').hide();
+                            $('#previewLoading').hide();
+                            $('#previewContent').html(`
+                                <img src="${previewUrl}" class="img-fluid" alt="Label Preview"
+                                     style="max-width: 100%; border: 1px solid #ddd; border-radius: 5px;">
+                            `);
+                            isReprintSetup = false;  // Clear flag after successful load
+                        };
+                        
+                        img.onerror = function() {
+                            console.log('[REPRINT] ✗ Existing preview not found or failed to load, generating new one');
+                            isReprintSetup = false;  // Clear flag before generating
+                            generatePreview();
+                        };
+                        
+                        img.src = previewUrl;
+                    } else {
+                        console.log('[REPRINT] No preview filename provided, generating new preview');
+                        isReprintSetup = false;  // Clear flag before generating
+                        generatePreview();
+                    }
+                }, 200);
+            }, 600);
+            
+        } catch (error) {
+            console.error('[REPRINT] Error loading reprint data:', error);
+            showToast('Error loading reprint data', 'danger');
+            isReprinting = false;
+        }
+    }
+    
+    // Auto-select template if provided in URL (only if not reprinting)
     {% if selected_template %}
-    $('#templateSelect').val('{{ selected_template.name }}').trigger('change');
+    if (!isReprinting) {
+        $('#templateSelect').val('{{ selected_template.name }}').trigger('change');
+    }
     {% endif %}
 });
 </script>

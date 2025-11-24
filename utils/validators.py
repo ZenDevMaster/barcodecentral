@@ -217,3 +217,50 @@ def sanitize_filename(filename: str) -> str:
         return "unnamed"
     
     return sanitized
+
+
+def generate_template_filename(display_name: str) -> str:
+    """
+    Generate a safe filename from a display name for templates
+    
+    Converts a friendly display name like "Product Label 4x2" into
+    a safe filename like "product_label_4x2.zpl.j2"
+    
+    Args:
+        display_name: Human-readable template name
+        
+    Returns:
+        Safe filename with .zpl.j2 extension
+    """
+    if not display_name:
+        return "unnamed.zpl.j2"
+    
+    # Convert to lowercase
+    filename = display_name.lower()
+    
+    # Replace spaces with underscores
+    filename = filename.replace(' ', '_')
+    
+    # Remove any existing .zpl.j2 extension to avoid duplication
+    filename = re.sub(r'\.zpl\.j2$', '', filename)
+    
+    # Remove or replace unsafe characters (keep only alphanumeric, hyphens, underscores)
+    filename = re.sub(r'[^\w\-]', '_', filename)
+    
+    # Collapse multiple underscores
+    filename = re.sub(r'_+', '_', filename)
+    
+    # Remove leading/trailing underscores
+    filename = filename.strip('_')
+    
+    # Limit length (reserve space for .zpl.j2 extension)
+    max_name_length = 200 - len('.zpl.j2')
+    if len(filename) > max_name_length:
+        filename = filename[:max_name_length]
+    
+    # Ensure not empty after sanitization
+    if not filename:
+        filename = "unnamed"
+    
+    # Add .zpl.j2 extension
+    return f"{filename}.zpl.j2"

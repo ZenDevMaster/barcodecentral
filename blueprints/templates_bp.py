@@ -8,6 +8,7 @@ from flask_login import login_required
 from jinja2 import TemplateError
 
 from template_manager import TemplateManager
+from utils import generate_template_filename
 
 logger = logging.getLogger(__name__)
 
@@ -142,62 +143,79 @@ def create_template():
         
         # Extract required fields - support both old and new formats
         # Old format: filename + content
-        # New format: name + zpl_content + label_width + label_height
-        filename = data.get('filename') or data.get('name')
+        # New format: name (display name) + zpl_content + label_width + label_height
+        display_name = data.get('name')
         content = data.get('content') or data.get('zpl_content')
         
-        if not filename:
-            return error_response("Field 'filename' or 'name' is required", 400)
+        # Generate filename from display name if not explicitly provided
+        if data.get('filename'):
+            # Explicit filename provided (legacy support)
+            filename = data.get('filename')
+        elif display_name:
+            # Generate filename from display name
+            filename = generate_template_filename(display_name)
+        else:
+            return error_response("Field 'name' (display name) is required", 400)
+        
         if not content:
             return error_response("Field 'content' or 'zpl_content' is required", 400)
         
         # Build label size from separate width/height or combined size string
         label_size = ''
         if data.get('label_width') and data.get('label_height'):
-            # Support unit suffixes (e.g., "2.3mm", "1.2cm")
+            # Support unit suffixes (e.g., "50mm", "15mm", "2cm", "4")
             width_str = str(data.get('label_width')).strip()
             height_str = str(data.get('label_height')).strip()
             
+            logger.debug(f"Parsing label size: width='{width_str}', height='{height_str}'")
+            
             # Parse and convert units if needed
-            from utils.label_size import LabelSize
-            from utils.unit_converter import parse_size_string, mm_to_inches
+            from utils.unit_converter import mm_to_inches
             
-            # Check if width has unit suffix
-            width_val = width_str
-            height_val = height_str
-            
-            # Convert cm to mm for parsing
-            if width_str.lower().endswith('cm'):
-                width_val = str(float(width_str[:-2].strip()) * 10) + 'mm'
-            if height_str.lower().endswith('cm'):
-                height_val = str(float(height_str[:-2].strip()) * 10) + 'mm'
+            # Helper function to parse individual dimension with unit
+            def parse_dimension(dim_str):
+                """Parse a dimension string like '50mm', '2cm', or '4' and return value in inches"""
+                dim_str = dim_str.strip().lower()
+                
+                if dim_str.endswith('mm'):
+                    # Millimeters
+                    value = float(dim_str[:-2].strip())
+                    return mm_to_inches(value)
+                elif dim_str.endswith('cm'):
+                    # Centimeters -> convert to mm first
+                    value = float(dim_str[:-2].strip())
+                    return mm_to_inches(value * 10)
+                elif dim_str.endswith('in') or dim_str.endswith('inches'):
+                    # Inches (explicit)
+                    if dim_str.endswith('inches'):
+                        value = float(dim_str[:-6].strip())
+                    else:
+                        value = float(dim_str[:-2].strip())
+                    return value
+                else:
+                    # No unit - assume inches
+                    return float(dim_str)
             
             # Parse with unit support
             try:
-                # Try parsing as size string with units
-                temp_size = f"{width_val}x{height_val}"
-                width, height, unit = parse_size_string(temp_size)
+                width_inches = parse_dimension(width_str)
+                height_inches = parse_dimension(height_str)
                 
-                # Convert to inches for storage (standard format)
-                if unit.value == 'mm':
-                    width = mm_to_inches(width)
-                    height = mm_to_inches(height)
-                
-                label_size = f"{width:.1f}x{height:.1f}"
-            except (ValueError, AttributeError):
-                # Fall back to treating as plain numbers (inches)
-                try:
-                    width = float(width_str.rstrip('inchesIN '))
-                    height = float(height_str.rstrip('inchesIN '))
-                    label_size = f"{width:.1f}x{height:.1f}"
-                except ValueError:
-                    pass
+                label_size = f"{width_inches:.1f}x{height_inches:.1f}"
+                logger.debug(f"Successfully parsed label size: '{label_size}' inches")
+            except (ValueError, AttributeError) as e:
+                logger.error(f"Failed to parse label dimensions: {e}")
+                return error_response(f"Invalid label dimensions: '{width_str}' x '{height_str}'. Use format like '50mm', '2cm', or '4'", 400)
         elif data.get('label_size') or data.get('size'):
             label_size = data.get('label_size', data.get('size', ''))
         
-        # Build metadata
+        # Validate that we have a label size
+        if not label_size:
+            return error_response("Label size is required. Please provide width and height.", 400)
+        
+        # Build metadata - use display_name for the metadata 'name' field
         metadata = {
-            'name': data.get('name', filename),
+            'name': display_name or filename.replace('.zpl.j2', '').replace('_', ' ').title(),
             'description': data.get('description', ''),
             'size': label_size,
             'created': data.get('created', ''),

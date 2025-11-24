@@ -7,7 +7,8 @@ from .validators import (
     validate_printer_name,
     validate_label_size,
     validate_zpl_content,
-    sanitize_filename
+    sanitize_filename,
+    generate_template_filename
 )
 
 __all__ = [

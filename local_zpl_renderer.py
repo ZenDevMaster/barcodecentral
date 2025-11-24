@@ -1,6 +1,26 @@
 """
 Local ZPL Renderer for Barcode Central
-Renders ZPL code to PNG images using Pillow - completely offline
+CURRENTLY UNUSED - Preserved for potential future offline fallback
+
+This module was previously used for offline preview generation but has been
+replaced with Labelary API integration for better quality and full ZPL support.
+
+Limitations of this local renderer:
+- Barcodes are visual representations only (not scannable)
+- Limited ZPL command support (text, basic positioning, simple barcodes only)
+- No PDF generation
+- No graphics/image support (^GF, ^GB, ^IM)
+- Limited font selection
+
+The system now uses Labelary API (http://api.labelary.com) which provides:
+- Full ZPL command support
+- Scannable barcodes
+- Both PNG and PDF output
+- Professional quality rendering
+- 5000 free renders per day
+
+This code is kept in the codebase for potential future use as an offline fallback
+if Labelary API becomes unavailable.
 """
 import re
 import logging

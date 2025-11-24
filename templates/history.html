@@ -122,6 +122,7 @@
                             <th>Date & Time</th>
                             <th>Template</th>
                             <th>Printer</th>
+                            <th>User</th>
                             <th>Quantity</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -135,11 +136,15 @@
                             </td>
                             <td>
                                 <i class="bi bi-file-earmark-text"></i>
-                                {{ item.template_name|default('Unknown') }}
+                                {{ item.template_metadata.name|default(item.template)|default('Unknown') }}
                             </td>
                             <td>
                                 <i class="bi bi-printer"></i>
                                 {{ item.printer_name|default('Unknown') }}
+                            </td>
+                            <td>
+                                <i class="bi bi-person"></i>
+                                {{ item.user|default('Unknown') }}
                             </td>
                             <td>
                                 <span class="badge bg-secondary">{{ item.quantity|default(1) }}</span>
@@ -170,15 +175,17 @@
                                             data-bs-toggle="tooltip" title="View Details">
                                         <i class="bi bi-eye"></i>
                                     </button>
-                                    {% if item.status == 'success' %}
-                                    <button class="btn btn-outline-success reprint-job" 
-                                            data-template="{{ item.template_name }}"
-                                            data-printer="{{ item.printer_name }}"
-                                            data-variables="{{ item.variables|tojson|escape }}"
+                                    <button class="btn btn-outline-success reprint-job"
+                                            data-template="{{ item.template }}"
+                                            data-template-name="{{ item.template_name }}"
+                                            data-printer-id="{{ item.printer_id }}"
+                                            data-printer-name="{{ item.printer_name }}"
+                                            data-variables='{{ item.variables|tojson }}'
+                                            data-quantity="{{ item.quantity|default(1) }}"
+                                            data-preview-filename="{{ item.preview_filename }}"
                                             data-bs-toggle="tooltip" title="Reprint">
                                         <i class="bi bi-arrow-repeat"></i>
                                     </button>
-                                    {% endif %}
                                     <button class="btn btn-outline-danger delete-job" 
                                             data-id="{{ item.id }}"
                                             data-bs-toggle="tooltip" title="Delete">
@@ -245,7 +252,7 @@
 
 <!-- Details Modal -->
 <div class="modal fade" id="detailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -262,6 +269,77 @@
         </div>
     </div>
 </div>
+
+<style>
+/* Preview container styling */
+.preview-container {
+    max-height: 500px;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    position: relative;
+}
+
+.preview-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.preview-image:hover {
+    transform: scale(1.02);
+}
+
+.preview-placeholder {
+    text-align: center;
+    color: #6c757d;
+    padding: 40px 20px;
+}
+
+.preview-placeholder i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.preview-error {
+    text-align: center;
+    color: #dc3545;
+    padding: 40px 20px;
+}
+
+.preview-error i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.preview-loading {
+    text-align: center;
+    color: #6c757d;
+    padding: 40px 20px;
+}
+
+.preview-loading .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .preview-container {
+        max-height: 300px;
+        min-height: 200px;
+    }
+}
+</style>
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
@@ -304,8 +382,10 @@ $(document).ready(function() {
         try {
             const response = await fetch(`/api/history/${jobId}`);
             if (response.ok) {
-                const data = await response.json();
-                displayJobDetails(data);
+                const result = await response.json();
+                // API returns {success: true, data: {...}}
+                // Pass the actual job data, not the wrapper
+                displayJobDetails(result.data);
                 $('#detailsModal').modal('show');
             } else {
                 showToast('Failed to load job details', 'danger');
@@ -316,16 +396,61 @@ $(document).ready(function() {
     });
 
     // Reprint job
-    $('.reprint-job').on('click', function() {
-        const template = $(this).data('template');
-        const printer = $(this).data('printer');
-        const variables = $(this).data('variables');
+    $('.reprint-job').on('click', function(e) {
+        e.preventDefault(); // Prevent any default action
+        console.log('[REPRINT] Click handler fired!');
         
-        // Redirect to print form with pre-filled data
-        const params = new URLSearchParams({
-            template: template
-        });
-        window.location.href = `/print?${params.toString()}`;
+        // Get RAW attribute value first
+        const rawVariables = $(this).attr('data-variables');
+        console.log('[REPRINT] RAW data-variables attribute:', rawVariables);
+        console.log('[REPRINT] RAW type:', typeof rawVariables);
+        
+        // Get variables from data attribute - need to parse if it's a string
+        let variables = $(this).data('variables');
+        console.log('[REPRINT] jQuery .data() returned:', variables);
+        console.log('[REPRINT] jQuery .data() type:', typeof variables);
+        
+        // If variables is a string, try to parse it as JSON
+        if (typeof variables === 'string') {
+            console.log('[REPRINT] Attempting to parse string...');
+            try {
+                variables = JSON.parse(variables);
+                console.log('[REPRINT] ✓ Parsed variables from string:', variables);
+            } catch (e) {
+                console.error('[REPRINT] ✗ Failed to parse variables:', e);
+                console.error('[REPRINT] String was:', variables);
+                variables = {};
+            }
+        } else if (typeof variables === 'object' && variables !== null) {
+            console.log('[REPRINT] Variables already an object:', variables);
+        } else {
+            console.warn('[REPRINT] Variables is neither string nor object:', variables);
+            variables = {};
+        }
+        const reprintData = {
+            template: $(this).data('template'),
+            templateName: $(this).data('template-name'),
+            printerId: $(this).data('printer-id'),
+            printerName: $(this).data('printer-name'),
+            variables: variables,
+            quantity: $(this).data('quantity'),
+            previewFilename: $(this).data('preview-filename')
+        };
+        
+        console.log('[REPRINT] Button clicked, data:', reprintData);
+        console.log('[REPRINT] Variables type:', typeof reprintData.variables);
+        console.log('[REPRINT] Variables value:', reprintData.variables);
+        
+        // Store in sessionStorage for print form to read
+        sessionStorage.setItem('reprintData', JSON.stringify(reprintData));
+        
+        // Verify storage
+        const stored = sessionStorage.getItem('reprintData');
+        console.log('[REPRINT] Stored in sessionStorage:', stored);
+        
+        // Redirect to print form
+        console.log('[REPRINT] Redirecting to /print');
+        window.location.href = '/print';
     });
 
     // Delete job
@@ -381,37 +506,114 @@ $(document).ready(function() {
 
     // Display job details
     function displayJobDetails(job) {
+        // Get template name from template field or template_metadata
+        const templateName = job.template_name || job.template ||
+                           (job.template_metadata && job.template_metadata.name) || 'N/A';
+        
+        // Get error message from either error or error_message field
+        const errorMsg = job.error || job.error_message;
+        
+        // Build preview HTML
+        let previewHtml = '';
+        if (job.preview_filename) {
+            const previewUrl = `/api/preview/${job.preview_filename}`;
+            previewHtml = `
+                <div class="preview-container" id="previewContainer">
+                    <div class="preview-loading">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading preview...</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            previewHtml = `
+                <div class="preview-container">
+                    <div class="preview-placeholder">
+                        <i class="bi bi-image"></i>
+                        <p>No preview available for this print job</p>
+                    </div>
+                </div>
+            `;
+        }
+        
         const html = `
             <div class="row">
-                <div class="col-md-6">
-                    <h6>Job Information</h6>
-                    <ul class="list-unstyled">
-                        <li><strong>ID:</strong> ${job.id || 'N/A'}</li>
-                        <li><strong>Timestamp:</strong> ${job.timestamp || 'N/A'}</li>
-                        <li><strong>Template:</strong> ${job.template_name || 'N/A'}</li>
-                        <li><strong>Printer:</strong> ${job.printer_name || 'N/A'}</li>
-                        <li><strong>Quantity:</strong> ${job.quantity || 1}</li>
-                        <li><strong>Status:</strong> <span class="badge bg-${job.status === 'success' ? 'success' : 'danger'}">${job.status || 'Unknown'}</span></li>
-                    </ul>
+                <div class="col-lg-5 mb-3">
+                    <h6 class="mb-3">Label Preview</h6>
+                    ${previewHtml}
                 </div>
-                <div class="col-md-6">
-                    <h6>Variables</h6>
-                    ${job.variables ? `
-                        <ul class="list-unstyled">
-                            ${Object.entries(job.variables).map(([key, value]) => 
-                                `<li><strong>${key}:</strong> ${value}</li>`
-                            ).join('')}
-                        </ul>
-                    ` : '<p class="text-muted">No variables</p>'}
+                <div class="col-lg-7">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <h6>Job Information</h6>
+                            <ul class="list-unstyled">
+                                <li><strong>ID:</strong> <small>${job.id || 'N/A'}</small></li>
+                                <li><strong>Timestamp:</strong> ${job.timestamp || 'N/A'}</li>
+                                <li><strong>Template:</strong> ${templateName}</li>
+                                <li><strong>Printer:</strong> ${job.printer_name || 'N/A'}</li>
+                                <li><strong>Quantity:</strong> ${job.quantity || 1}</li>
+                                <li><strong>Status:</strong> <span class="badge bg-${job.status === 'success' ? 'success' : 'danger'}">${job.status || 'Unknown'}</span></li>
+                                <li><strong>User:</strong> ${job.user || 'N/A'}</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <h6>Variables</h6>
+                            ${job.variables && Object.keys(job.variables).length > 0 ? `
+                                <ul class="list-unstyled" style="max-height: 200px; overflow-y: auto;">
+                                    ${Object.entries(job.variables).map(([key, value]) =>
+                                        `<li><strong>${key}:</strong> <span class="text-break">${value}</span></li>`
+                                    ).join('')}
+                                </ul>
+                            ` : '<p class="text-muted">No variables</p>'}
+                        </div>
+                    </div>
                 </div>
             </div>
-            ${job.error ? `
+            ${errorMsg ? `
                 <div class="alert alert-danger mt-3">
-                    <strong>Error:</strong> ${job.error}
+                    <strong>Error:</strong> ${errorMsg}
                 </div>
             ` : ''}
         `;
+        
         $('#detailsContent').html(html);
+        
+        // Load preview image if available
+        if (job.preview_filename) {
+            loadPreviewImage(job.preview_filename);
+        }
+    }
+    
+    // Load preview image with error handling
+    function loadPreviewImage(filename) {
+        const previewUrl = `/api/preview/${filename}`;
+        const container = $('#previewContainer');
+        
+        const img = new Image();
+        
+        img.onload = function() {
+            container.html(`
+                <img src="${previewUrl}"
+                     alt="Label Preview"
+                     class="preview-image"
+                     title="Click to view full size"
+                     onclick="window.open('${previewUrl}', '_blank')">
+            `);
+        };
+        
+        img.onerror = function() {
+            container.html(`
+                <div class="preview-error">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <p>Failed to load preview image</p>
+                    <small class="text-muted">The preview file may have been deleted</small>
+                </div>
+            `);
+        };
+        
+        img.src = previewUrl;
     }
 });
 </script>
