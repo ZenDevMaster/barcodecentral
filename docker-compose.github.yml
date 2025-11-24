@@ -1,0 +1,72 @@
+# Docker Compose configuration for deploying directly from GitHub
+# This file demonstrates how to build and deploy from the GitHub repository
+# without cloning the code locally.
+
+version: '3.8'
+
+services:
+  app:
+    # Build directly from GitHub repository
+    build:
+      context: https://github.com/ZenDevMaster/barcodecentral.git
+      dockerfile: Dockerfile
+    
+    container_name: barcode-central
+    
+    # Port mapping
+    ports:
+      - "5000:5000"
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Volume mounts for persistent data
+    volumes:
+      # Application data
+      - ./printers.json:/app/printers.json
+      - ./history.json:/app/history.json
+      
+      # ZPL templates (optional - for custom templates)
+      - ./templates_zpl:/app/templates_zpl
+      
+      # Logs
+      - ./logs:/app/logs
+      
+      # Preview images
+      - ./previews:/app/previews
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Labels for metadata
+    labels:
+      - "com.barcodecentral.repository=https://github.com/ZenDevMaster/barcodecentral"
+      - "com.barcodecentral.version=1.0.0"
+      - "com.barcodecentral.description=ZPL Label Printing Application"
+    
+    # Network mode
+    network_mode: bridge
+
+# Optional: Define networks
+networks:
+  default:
+    name: barcode-central-network

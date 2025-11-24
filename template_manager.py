@@ -57,14 +57,23 @@ class TemplateManager:
         templates = []
         
         try:
+            # Check if templates directory exists
+            if not os.path.exists(self.templates_dir):
+                logger.error(f"Templates directory does not exist: {self.templates_dir}")
+                return []
+            
             # Scan directory for .zpl.j2 files
-            for filename in os.listdir(self.templates_dir):
+            all_files = os.listdir(self.templates_dir)
+            logger.debug(f"Found {len(all_files)} files in templates directory: {all_files}")
+            
+            for filename in all_files:
                 if filename.endswith('.zpl.j2'):
                     try:
                         template_info = self.get_template(filename)
                         templates.append(template_info)
+                        logger.debug(f"Successfully loaded template: {filename}")
                     except Exception as e:
-                        logger.error(f"Error loading template {filename}: {e}")
+                        logger.error(f"Error loading template {filename}: {e}", exc_info=True)
                         # Include template with error info
                         templates.append({
                             'filename': filename,
@@ -75,11 +84,11 @@ class TemplateManager:
             # Sort by filename
             templates.sort(key=lambda x: x.get('filename', ''))
             
-            logger.info(f"Listed {len(templates)} templates")
+            logger.info(f"Listed {len(templates)} templates from {self.templates_dir}")
             return templates
             
         except Exception as e:
-            logger.error(f"Error listing templates: {e}")
+            logger.error(f"Error listing templates: {e}", exc_info=True)
             return []
     
     def get_template(self, name: str) -> Dict[str, Any]:

@@ -4,6 +4,7 @@ Handles printer configuration, validation, and ZPL communication via TCP sockets
 """
 import socket
 import logging
+import time
 from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime
 from utils.json_storage import read_json, write_json
@@ -221,7 +222,8 @@ class PrinterManager:
         Returns:
             Tuple of (success, message)
         """
-        data = self._load_printers()
+        # Force reload to ensure we have fresh data from disk
+        data = self._load_printers(force_reload=True)
         printers = data.get('printers', [])
         
         # Find printer index
@@ -468,20 +470,82 @@ class PrinterManager:
         ip = printer.get('ip')
         port = printer.get('port', 9100)
         
+        # Log ZPL content BEFORE attempting to send
+        zpl_length = len(zpl_content)
+        zpl_preview = zpl_content[:200] + '...' if zpl_length > 200 else zpl_content
+        logger.info(f"[SEND_ZPL] Printer: {printer_id} ({ip}:{port})")
+        logger.info(f"[SEND_ZPL] ZPL Length: {zpl_length} bytes")
+        logger.info(f"[SEND_ZPL] ZPL Preview (first 200 chars): {repr(zpl_preview)}")
+        logger.info(f"[SEND_ZPL] Quantity: {quantity} copies")
+        logger.info(f"[SEND_ZPL] Timeout: {timeout} seconds")
+        
         try:
             # Send ZPL for each copy
             for copy_num in range(quantity):
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                logger.info(f"[SEND_ZPL] Starting copy {copy_num + 1}/{quantity}")
+                
+                # Create socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                logger.info(f"[SEND_ZPL] Socket created: {sock}")
+                
+                try:
+                    # Set timeout
                     sock.settimeout(timeout)
-                    sock.connect((ip, port))
-                    sock.sendall(zpl_content.encode('utf-8'))
+                    logger.info(f"[SEND_ZPL] Socket timeout set to {timeout}s")
                     
-                    logger.info(f"Sent ZPL to printer {printer_id} ({ip}:{port}) - Copy {copy_num + 1}/{quantity}")
+                    # Connect
+                    logger.info(f"[SEND_ZPL] Attempting connection to {ip}:{port}...")
+                    sock.connect((ip, port))
+                    logger.info(f"[SEND_ZPL] Successfully connected to {ip}:{port}")
+                    
+                    # Check socket state before sending
+                    try:
+                        peer_name = sock.getpeername()
+                        logger.info(f"[SEND_ZPL] Socket peer: {peer_name}")
+                    except Exception as e:
+                        logger.warning(f"[SEND_ZPL] Could not get peer name: {e}")
+                    
+                    # Encode ZPL
+                    zpl_bytes = zpl_content.encode('utf-8')
+                    logger.info(f"[SEND_ZPL] Encoded ZPL to {len(zpl_bytes)} bytes")
+                    
+                    # Send data
+                    logger.info(f"[SEND_ZPL] Calling sendall() with {len(zpl_bytes)} bytes...")
+                    sock.sendall(zpl_bytes)
+                    logger.info(f"[SEND_ZPL] sendall() completed successfully")
+                    
+                    # Verify socket is still connected
+                    try:
+                        peer_name = sock.getpeername()
+                        logger.info(f"[SEND_ZPL] Socket still connected to {peer_name} after send")
+                    except Exception as e:
+                        logger.warning(f"[SEND_ZPL] Socket disconnected after send: {e}")
+                    
+                    # CRITICAL: Wait for data to be transmitted before closing
+                    logger.info(f"[SEND_ZPL] Waiting 0.5s for data transmission...")
+                    time.sleep(0.5)
+                    logger.info(f"[SEND_ZPL] Wait complete")
+                    
+                    # Properly shutdown the socket before closing
+                    logger.info(f"[SEND_ZPL] Attempting socket shutdown...")
+                    try:
+                        sock.shutdown(socket.SHUT_WR)
+                        logger.info(f"[SEND_ZPL] Socket shutdown successful")
+                    except Exception as e:
+                        logger.warning(f"[SEND_ZPL] Socket shutdown failed (may be normal): {e}")
+                    
+                    logger.info(f"[SEND_ZPL] Closing socket...")
+                    sock.close()
+                    logger.info(f"[SEND_ZPL] Socket closed")
+                    
+                    logger.info(f"[SEND_ZPL] ✓ Successfully sent copy {copy_num + 1}/{quantity} to {printer_id}")
+                    
+                except Exception as e:
+                    logger.error(f"[SEND_ZPL] ✗ Error during copy {copy_num + 1}/{quantity}: {type(e).__name__}: {e}")
+                    sock.close()
+                    raise
             
-            # Log truncated ZPL content for debugging
-            zpl_preview = zpl_content[:200] + '...' if len(zpl_content) > 200 else zpl_content
-            logger.debug(f"ZPL content sent: {zpl_preview}")
-            
+            logger.info(f"[SEND_ZPL] ✓✓✓ ALL COPIES SENT SUCCESSFULLY ✓✓✓")
             return True, f"Successfully sent {quantity} label(s) to printer"
             
         except socket.timeout:

@@ -29,8 +29,10 @@
                             <select class="form-select" id="templateSelect" name="template_name" required>
                                 <option value="">-- Select Template --</option>
                                 {% for template in templates %}
-                                <option value="{{ template.name }}"
-                                        {% if selected_template and selected_template.name == template.name %}selected{% endif %}
+                                <option value="{{ template.filename }}"
+                                        {% if selected_template and selected_template.filename == template.filename %}selected{% endif %}
+                                        data-filename="{{ template.filename }}"
+                                        data-name="{{ template.name }}"
                                         data-variables="{{ template.variables|join(',') if template.variables else '' }}"
                                         data-width="{{ template.size.split('x')[0] if template.size and 'x' in template.size else '' }}"
                                         data-height="{{ template.size.split('x')[1] if template.size and 'x' in template.size else '' }}">
@@ -46,7 +48,8 @@
                                 <option value="">-- Select Printer --</option>
                                 {% for printer in printers %}
                                 {% if printer.enabled %}
-                                <option value="{{ printer.name }}"
+                                <option value="{{ printer.id }}"
+                                        data-printer-name="{{ printer.name }}"
                                         data-sizes="{{ printer.supported_sizes|join(',') if printer.supported_sizes else '' }}">
                                     {{ printer.name }} - {{ printer.location|default('Unknown Location') }}
                                 </option>
@@ -172,9 +175,11 @@ $(document).ready(function() {
         const variables = selectedOption.data('variables');
         const width = selectedOption.data('width');
         const height = selectedOption.data('height');
+        const displayName = selectedOption.data('name');
 
         currentTemplate = {
-            name: templateName,
+            filename: templateName,
+            name: displayName,
             variables: variables ? variables.split(',') : [],
             width: width,
             height: height
@@ -212,11 +217,19 @@ $(document).ready(function() {
     $('#printForm').on('submit', async function(e) {
         e.preventDefault();
 
+        const templateName = $('#templateSelect').val();
+        const printerName = $('#printerSelect').val();
+        
+        // Find printer_id from printer name
+        const printerOption = $('#printerSelect').find('option:selected');
+        const printerId = printerOption.val(); // This is actually the printer name, we need to use it as-is
+        
         const formData = {
-            template_name: $('#templateSelect').val(),
-            printer_name: $('#printerSelect').val(),
+            template: templateName,
+            printer_id: printerId,
             quantity: parseInt($('#quantity').val()),
-            variables: {}
+            variables: {},
+            generate_preview: true
         };
 
         // Collect variable values
@@ -226,7 +239,7 @@ $(document).ready(function() {
         });
 
         try {
-            const response = await fetch('/api/print', {
+            const response = await fetch('/api/print/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -325,7 +338,7 @@ $(document).ready(function() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    template_name: currentTemplate.name,
+                    template_name: currentTemplate.filename,
                     variables: variables
                 })
             });
@@ -353,10 +366,10 @@ $(document).ready(function() {
     function showSuccessModal(data) {
         const details = `
             <ul class="list-unstyled">
-                <li><strong>Template:</strong> ${data.template_name || 'N/A'}</li>
-                <li><strong>Printer:</strong> ${data.printer_name || 'N/A'}</li>
+                <li><strong>Template:</strong> ${data.template || 'N/A'}</li>
+                <li><strong>Printer:</strong> ${data.printer || 'N/A'}</li>
                 <li><strong>Quantity:</strong> ${data.quantity || 1}</li>
-                <li><strong>Status:</strong> <span class="badge bg-success">${data.status || 'Submitted'}</span></li>
+                <li><strong>Status:</strong> <span class="badge bg-success">Success</span></li>
             </ul>
         `;
         $('#printJobDetails').html(details);

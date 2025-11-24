@@ -35,8 +35,8 @@
                             {{ printer.name }}
                         </h5>
                         <div class="form-check form-switch">
-                            <input class="form-check-input printer-toggle" type="checkbox" 
-                                   data-name="{{ printer.name }}"
+                            <input class="form-check-input printer-toggle" type="checkbox"
+                                   data-id="{{ printer.id }}"
                                    {% if printer.enabled %}checked{% endif %}>
                         </div>
                     </div>
@@ -85,16 +85,16 @@
                 </div>
                 <div class="card-footer bg-white">
                     <div class="btn-group w-100" role="group">
-                        <button class="btn btn-sm btn-outline-primary test-connection" 
-                                data-name="{{ printer.name }}">
+                        <button class="btn btn-sm btn-outline-primary test-connection"
+                                data-id="{{ printer.id }}">
                             <i class="bi bi-wifi"></i> Test
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary edit-printer" 
-                                data-printer="{{ printer|tojson|escape }}">
+                        <button class="btn btn-sm btn-outline-secondary edit-printer"
+                                data-printer='{{ printer|tojson }}'>
                             <i class="bi bi-pencil"></i> Edit
                         </button>
-                        <button class="btn btn-sm btn-outline-danger delete-printer" 
-                                data-name="{{ printer.name }}">
+                        <button class="btn btn-sm btn-outline-danger delete-printer"
+                                data-id="{{ printer.id }}">
                             <i class="bi bi-trash"></i> Delete
                         </button>
                     </div>
@@ -134,7 +134,7 @@
             <form id="printerForm">
                 <div class="modal-body">
                     <input type="hidden" id="editMode" value="false">
-                    <input type="hidden" id="originalName" value="">
+                    <input type="hidden" id="originalId" value="">
                     
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -222,7 +222,7 @@ $(document).ready(function() {
         e.preventDefault();
         
         const isEditMode = $('#editMode').val() === 'true';
-        const originalName = $('#originalName').val();
+        const originalId = $('#originalId').val();
         
         const printerData = {
             name: $('#printerName').val().trim(),
@@ -238,7 +238,7 @@ $(document).ready(function() {
             let method = 'POST';
             
             if (isEditMode) {
-                url = `/api/printers/${originalName}`;
+                url = `/api/printers/${originalId}`;
                 method = 'PUT';
             }
 
@@ -251,6 +251,7 @@ $(document).ready(function() {
             });
 
             if (response.ok) {
+                $('#addPrinterModal').modal('hide');
                 showToast(`Printer ${isEditMode ? 'updated' : 'added'} successfully!`, 'success');
                 setTimeout(() => location.reload(), 1000);
             } else {
@@ -269,7 +270,7 @@ $(document).ready(function() {
         $('#modalTitle').text('Edit Printer');
         $('#submitBtnText').text('Update Printer');
         $('#editMode').val('true');
-        $('#originalName').val(printer.name);
+        $('#originalId').val(printer.id);
         
         $('#printerName').val(printer.name).prop('readonly', true);
         $('#printerLocation').val(printer.location || '');
@@ -287,7 +288,7 @@ $(document).ready(function() {
         $('#modalTitle').text('Add Printer');
         $('#submitBtnText').text('Add Printer');
         $('#editMode').val('false');
-        $('#originalName').val('');
+        $('#originalId').val('');
         $('#printerName').prop('readonly', false);
         $('#printerPort').val('9100');
         $('#printerEnabled').prop('checked', true);
@@ -295,7 +296,7 @@ $(document).ready(function() {
 
     // Delete printer
     $('.delete-printer').on('click', function() {
-        printerToDelete = $(this).data('name');
+        printerToDelete = $(this).data('id');
         $('#deletePrinterName').text(printerToDelete);
         $('#deleteModal').modal('show');
     });
@@ -322,11 +323,11 @@ $(document).ready(function() {
 
     // Toggle printer enabled/disabled
     $('.printer-toggle').on('change', async function() {
-        const printerName = $(this).data('name');
+        const printerId = $(this).data('id');
         const enabled = $(this).is(':checked');
 
         try {
-            const response = await fetch(`/api/printers/${printerName}`, {
+            const response = await fetch(`/api/printers/${printerId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -351,13 +352,13 @@ $(document).ready(function() {
     // Test connection
     $('.test-connection').on('click', async function() {
         const btn = $(this);
-        const printerName = btn.data('name');
+        const printerId = btn.data('id');
         const originalHtml = btn.html();
         
         btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Testing...');
 
         try {
-            const response = await fetch(`/api/printers/${printerName}/test`, {
+            const response = await fetch(`/api/printers/${printerId}/test`, {
                 method: 'POST'
             });
 

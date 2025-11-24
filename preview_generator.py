@@ -1,41 +1,28 @@
 """
 Preview Generator Module for Barcode Central
-Handles ZPL preview generation using the Labelary API
+Handles ZPL preview generation using local rendering
 """
 import os
 import logging
-import requests
 import uuid
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
+from local_zpl_renderer import LocalZPLRenderer
 from utils.label_size import LabelSize
-from utils.unit_converter import parse_and_normalize
 
 logger = logging.getLogger(__name__)
 
 
 class PreviewGenerator:
     """
-    Generates label previews using the Labelary API
-    Supports PNG and PDF formats with caching
+    Generates label previews using local ZPL rendering
+    Completely offline - no external API dependencies
     """
-    
-    # Labelary API base URL
-    LABELARY_BASE_URL = "http://api.labelary.com/v1/printers"
-    
-    # Supported DPI values (Labelary uses different values than actual printer DPI)
-    # 6dpi = 152 DPI, 8dpi = 203 DPI, 12dpi = 300 DPI, 24dpi = 600 DPI
-    DPI_MAPPING = {
-        152: 6,
-        203: 8,
-        300: 12,
-        600: 24
-    }
     
     def __init__(self, previews_dir: str = 'previews', dpi: int = 203, label_size: str = '4x6'):
         """
-        Initialize PreviewGenerator
+        Initialize PreviewGenerator with local renderer
         
         Args:
             previews_dir: Directory to store preview files (default: 'previews')
@@ -46,26 +33,29 @@ class PreviewGenerator:
         self.default_dpi = dpi
         self.default_label_size = label_size
         
+        # Initialize local renderer
+        self.renderer = LocalZPLRenderer(dpi=dpi)
+        
         # Ensure previews directory exists
         os.makedirs(self.previews_dir, exist_ok=True)
         
-        logger.info(f"PreviewGenerator initialized with directory: {self.previews_dir}")
+        logger.info(f"PreviewGenerator initialized with local rendering")
     
     def generate_preview(
-        self, 
-        zpl_content: str, 
-        label_size: Optional[str] = None, 
-        dpi: Optional[int] = None, 
+        self,
+        zpl_content: str,
+        label_size: Optional[str] = None,
+        dpi: Optional[int] = None,
         format: str = 'png'
     ) -> Tuple[bool, bytes, str]:
         """
-        Generate preview image from ZPL content using Labelary API
+        Generate preview image from ZPL content using local rendering
         
         Args:
             zpl_content: ZPL code to render
             label_size: Label size (e.g., '4x6', '4x2') - uses default if not provided
             dpi: DPI setting (152, 203, 300, 600) - uses default if not provided
-            format: Output format ('png' or 'pdf')
+            format: Output format (only 'png' supported)
             
         Returns:
             Tuple of (success, image_bytes, error_message)
@@ -75,8 +65,8 @@ class PreviewGenerator:
         dpi = dpi or self.default_dpi
         
         # Validate format
-        if format not in ['png', 'pdf']:
-            return False, b'', f"Invalid format '{format}'. Must be 'png' or 'pdf'"
+        if format != 'png':
+            return False, b'', f"Only PNG format supported (requested: {format})"
         
         # Validate and parse label size
         try:
@@ -84,65 +74,17 @@ class PreviewGenerator:
         except ValueError as e:
             return False, b'', str(e)
         
-        # Map DPI to Labelary DPI value
-        labelary_dpi = self.DPI_MAPPING.get(dpi)
-        if not labelary_dpi:
-            return False, b'', f"Invalid DPI '{dpi}'. Supported values: {list(self.DPI_MAPPING.keys())}"
-        
-        # Construct Labelary API URL
-        url = f"{self.LABELARY_BASE_URL}/{labelary_dpi}dpi/labels/{width}x{height}/0/"
-        
-        # Add format extension for PDF
-        if format == 'pdf':
-            url += f"?{zpl_content}"
-            method = 'GET'
-            data = None
-        else:
-            method = 'POST'
-            data = zpl_content
-        
-        try:
-            # Make request to Labelary API
-            if method == 'POST':
-                response = requests.post(
-                    url,
-                    data=data.encode('utf-8'),
-                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                    timeout=10
-                )
-            else:
-                response = requests.get(url, timeout=10)
-            
-            # Check response status
-            if response.status_code == 200:
-                logger.info(f"Successfully generated {format.upper()} preview ({label_size}, {dpi} DPI)")
-                return True, response.content, ""
-            else:
-                error_msg = f"Labelary API error: HTTP {response.status_code}"
-                logger.error(error_msg)
-                return False, b'', error_msg
-                
-        except requests.exceptions.Timeout:
-            error_msg = "Labelary API request timed out"
-            logger.error(error_msg)
-            return False, b'', error_msg
-        except requests.exceptions.ConnectionError:
-            error_msg = "Failed to connect to Labelary API"
-            logger.error(error_msg)
-            return False, b'', error_msg
-        except Exception as e:
-            error_msg = f"Error generating preview: {str(e)}"
-            logger.error(error_msg)
-            return False, b'', error_msg
+        # Render locally
+        return self.renderer.render(zpl_content, width, height, dpi)
     
     def generate_pdf(
-        self, 
-        zpl_content: str, 
-        label_size: Optional[str] = None, 
+        self,
+        zpl_content: str,
+        label_size: Optional[str] = None,
         dpi: Optional[int] = None
     ) -> Tuple[bool, bytes, str]:
         """
-        Generate PDF preview from ZPL content
+        PDF generation not supported by local renderer
         
         Args:
             zpl_content: ZPL code to render
@@ -152,7 +94,7 @@ class PreviewGenerator:
         Returns:
             Tuple of (success, pdf_bytes, error_message)
         """
-        return self.generate_preview(zpl_content, label_size, dpi, format='pdf')
+        return False, b'', "PDF generation not supported by local renderer. Use PNG format instead."
     
     def save_preview(
         self, 
@@ -279,8 +221,7 @@ class PreviewGenerator:
         Parse label size string into width and height in inches
         
         Supports both legacy format ("4x6") and new unit-aware formats
-        ("101.6x152.4mm", "4\"x6\""). Always returns dimensions in inches
-        since the Labelary API requires inches.
+        ("101.6x152.4mm", "4\"x6\""). Always returns dimensions in inches.
         
         Args:
             size_str: Label size string (e.g., '4x6', '101.6x152.4mm', '4\"x6\"')

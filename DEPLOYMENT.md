@@ -61,10 +61,38 @@ newgrp docker
 
 ## Quick Start
 
-For a rapid deployment:
+### Deploy from GitHub
+
+For a rapid deployment directly from GitHub:
 
 ```bash
-# 1. Clone or navigate to the project directory
+# 1. Clone the repository
+git clone https://github.com/ZenDevMaster/barcodecentral.git
+cd barcodecentral
+
+# 2. Create required directories
+mkdir -p logs previews
+
+# 3. Create environment file
+cp .env.production.example .env
+nano .env  # Edit with your configuration
+
+# 4. (Optional) Create printer configuration
+cp printers.json.example printers.json
+nano printers.json  # Edit with your printer details
+
+# 5. Deploy
+./scripts/deploy.sh --build
+```
+
+The application will be available at `http://localhost:5000`
+
+### Deploy from Local Directory
+
+If you already have the code:
+
+```bash
+# 1. Navigate to the project directory
 cd /path/to/barcode-central
 
 # 2. Create environment file
@@ -75,13 +103,24 @@ nano .env  # Edit with your configuration
 ./scripts/deploy.sh --build
 ```
 
-The application will be available at `http://localhost:5000`
-
 ---
 
 ## Initial Setup
 
-### 1. Prepare Environment Configuration
+### 1. Clone from GitHub (if not already done)
+
+```bash
+git clone https://github.com/ZenDevMaster/barcodecentral.git
+cd barcodecentral
+```
+
+### 2. Create Required Directories
+
+```bash
+mkdir -p logs previews
+```
+
+### 3. Prepare Environment Configuration
 
 Create your production environment file:
 
@@ -112,26 +151,25 @@ LOGIN_PASSWORD=your-secure-password
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-### 2. Secure the Environment File
+### 4. Secure the Environment File
 
 ```bash
 chmod 600 .env
 ```
 
-### 3. Initialize Data Files
+### 5. Initialize Printer Configuration (Optional)
 
-Create empty data files if they don't exist:
+You can configure printers via the web UI after deployment, or create the configuration file now:
 
 ```bash
-# Create printers configuration
-echo '[]' > printers.json
+# Copy example configuration
+cp printers.json.example printers.json
 
-# Create history file
-echo '[]' > history.json
-
-# Ensure templates directory exists
-mkdir -p templates_zpl
+# Edit with your printer details
+nano printers.json
 ```
+
+**Note**: The `history.json` file will be created automatically on first use.
 
 ---
 
@@ -154,7 +192,9 @@ Key configuration files:
 
 ## Building the Image
 
-### Using the Build Script
+### Build from Local Repository
+
+#### Using the Build Script
 
 ```bash
 ./scripts/build.sh
@@ -166,10 +206,25 @@ Or with a custom tag:
 ./scripts/build.sh v1.0.0
 ```
 
-### Manual Build
+#### Manual Build
 
 ```bash
 docker build -t barcode-central:latest .
+```
+
+### Build Directly from GitHub
+
+You can build the Docker image directly from the GitHub repository without cloning:
+
+```bash
+# Build from main branch
+docker build -t barcode-central:latest https://github.com/ZenDevMaster/barcodecentral.git
+
+# Build from specific tag
+docker build -t barcode-central:1.0.0 https://github.com/ZenDevMaster/barcodecentral.git#v1.0.0
+
+# Build from specific branch
+docker build -t barcode-central:dev https://github.com/ZenDevMaster/barcodecentral.git#develop
 ```
 
 ### Build Options
@@ -183,6 +238,21 @@ docker build --no-cache -t barcode-central:latest .
 # Build with specific platform
 docker build --platform linux/amd64 -t barcode-central:latest .
 ```
+### Deploy from Docker Hub (Future)
+
+Once the image is published to Docker Hub, you can deploy directly:
+
+```bash
+# Pull and run from Docker Hub
+docker pull zendevmaster/barcodecentral:latest
+docker run -d -p 5000:5000 --env-file .env zendevmaster/barcodecentral:latest
+
+# Or use with docker-compose
+# Update docker-compose.yml to use: image: zendevmaster/barcodecentral:latest
+```
+
+**Note**: See [GITHUB_SETUP.md](GITHUB_SETUP.md#docker-hub-integration) for instructions on publishing to Docker Hub.
+
 
 ---
 

@@ -55,36 +55,6 @@ def list_printers():
         }), 500
 
 
-@printers_bp.route('/<printer_id>', methods=['GET'])
-@login_required
-def get_printer(printer_id):
-    """
-    GET /api/printers/<printer_id>
-    Get specific printer details
-    """
-    try:
-        printer = printer_manager.get_printer(printer_id)
-        
-        if not printer:
-            return jsonify({
-                'success': False,
-                'error': f"Printer '{printer_id}' not found"
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'data': printer
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error getting printer {printer_id}: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Failed to get printer',
-            'details': {'message': str(e)}
-        }), 500
-
-
 @printers_bp.route('', methods=['POST'])
 @login_required
 def add_printer():
@@ -128,81 +98,7 @@ def add_printer():
         }), 500
 
 
-@printers_bp.route('/<printer_id>', methods=['PUT'])
-@login_required
-def update_printer(printer_id):
-    """
-    PUT /api/printers/<printer_id>
-    Update existing printer
-    """
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No data provided'
-            }), 400
-        
-        # Update printer
-        success, message = printer_manager.update_printer(printer_id, data)
-        
-        if not success:
-            status_code = 404 if 'not found' in message.lower() else 400
-            return jsonify({
-                'success': False,
-                'error': message
-            }), status_code
-        
-        return jsonify({
-            'success': True,
-            'message': message,
-            'data': {
-                'printer_id': printer_id
-            }
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error updating printer {printer_id}: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Failed to update printer',
-            'details': {'message': str(e)}
-        }), 500
-
-
-@printers_bp.route('/<printer_id>', methods=['DELETE'])
-@login_required
-def delete_printer(printer_id):
-    """
-    DELETE /api/printers/<printer_id>
-    Delete a printer
-    """
-    try:
-        success, message = printer_manager.delete_printer(printer_id)
-        
-        if not success:
-            status_code = 404 if 'not found' in message.lower() else 400
-            return jsonify({
-                'success': False,
-                'error': message
-            }), status_code
-        
-        return jsonify({
-            'success': True,
-            'message': message
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error deleting printer {printer_id}: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Failed to delete printer',
-            'details': {'message': str(e)}
-        }), 500
-
-
-@printers_bp.route('/<printer_id>/test', methods=['POST'])
+@printers_bp.route('/<path:printer_id>/test', methods=['POST'])
 @login_required
 def test_printer(printer_id):
     """
@@ -210,12 +106,13 @@ def test_printer(printer_id):
     Test printer connection
     """
     try:
-        # Get timeout from request body if provided
-        data = request.get_json() or {}
+        # Get timeout from request body if provided (handle both JSON and empty requests)
+        data = request.get_json(silent=True) or {}
         timeout = data.get('timeout', 5)
         
-        # Test connection
-        success, message = printer_manager.test_printer_connection(printer_id, timeout=timeout)
+        # Generate simple test ZPL content and send it to trigger actual print
+        test_zpl = "^XA^FO50,50^ADN,36,20^FDTest Print^FS^XZ"
+        success, message = printer_manager.send_zpl(printer_id, test_zpl, quantity=1, timeout=timeout)
         
         if not success:
             # Determine appropriate status code
@@ -251,7 +148,7 @@ def test_printer(printer_id):
         }), 500
 
 
-@printers_bp.route('/<printer_id>/validate', methods=['POST'])
+@printers_bp.route('/<path:printer_id>/validate', methods=['POST'])
 @login_required
 def validate_printer(printer_id):
     """
@@ -306,7 +203,7 @@ def validate_printer(printer_id):
         }), 500
 
 
-@printers_bp.route('/<printer_id>/print', methods=['POST'])
+@printers_bp.route('/<path:printer_id>/print', methods=['POST'])
 @login_required
 def print_label(printer_id):
     """
@@ -408,5 +305,109 @@ def print_label(printer_id):
         return jsonify({
             'success': False,
             'error': 'Failed to print',
+            'details': {'message': str(e)}
+        }), 500
+
+
+@printers_bp.route('/<path:printer_id>', methods=['GET'])
+@login_required
+def get_printer(printer_id):
+    """
+    GET /api/printers/<printer_id>
+    Get specific printer details
+    """
+    try:
+        printer = printer_manager.get_printer(printer_id)
+        
+        if not printer:
+            return jsonify({
+                'success': False,
+                'error': f"Printer '{printer_id}' not found"
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': printer
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting printer {printer_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get printer',
+            'details': {'message': str(e)}
+        }), 500
+
+
+@printers_bp.route('/<path:printer_id>', methods=['PUT'])
+@login_required
+def update_printer(printer_id):
+    """
+    PUT /api/printers/<printer_id>
+    Update existing printer
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Update printer
+        success, message = printer_manager.update_printer(printer_id, data)
+        
+        if not success:
+            status_code = 404 if 'not found' in message.lower() else 400
+            return jsonify({
+                'success': False,
+                'error': message
+            }), status_code
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'data': {
+                'printer_id': printer_id
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error updating printer {printer_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to update printer',
+            'details': {'message': str(e)}
+        }), 500
+
+
+@printers_bp.route('/<path:printer_id>', methods=['DELETE'])
+@login_required
+def delete_printer(printer_id):
+    """
+    DELETE /api/printers/<printer_id>
+    Delete a printer
+    """
+    try:
+        success, message = printer_manager.delete_printer(printer_id)
+        
+        if not success:
+            status_code = 404 if 'not found' in message.lower() else 400
+            return jsonify({
+                'success': False,
+                'error': message
+            }), status_code
+        
+        return jsonify({
+            'success': True,
+            'message': message
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting printer {printer_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to delete printer',
             'details': {'message': str(e)}
         }), 500

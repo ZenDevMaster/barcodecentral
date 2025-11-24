@@ -160,10 +160,10 @@ def print_label():
                 if success:
                     preview_url = f"/api/preview/{filename}"
                     preview_filename = filename
-                    logger.info(f"Generated preview for job {job_id}: {filename}")
+                    logger.info(f"Generated preview: {filename}")
                 else:
                     # Log warning but don't fail the print job
-                    logger.warning(f"Failed to generate preview for job {job_id}: {error_msg}")
+                    logger.warning(f"Failed to generate preview: {error_msg}")
                     
             except Exception as e:
                 # Log error but don't fail the print job

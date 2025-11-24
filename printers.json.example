@@ -1,0 +1,37 @@
+{
+  "printers": [
+    {
+      "id": "zebra-warehouse-01",
+      "name": "Zebra ZT230 - Warehouse",
+      "ip": "192.168.1.100",
+      "port": 9100,
+      "dpi": 203,
+      "supported_sizes": ["4x6", "4x2"],
+      "default_unit": "inches",
+      "enabled": true,
+      "description": "Main warehouse printer for shipping labels"
+    },
+    {
+      "id": "zebra-office-01",
+      "name": "Zebra GK420d - Office",
+      "ip": "192.168.1.101",
+      "port": 9100,
+      "dpi": 203,
+      "supported_sizes": ["4x6", "101.6x50.8mm"],
+      "default_unit": "inches",
+      "enabled": true,
+      "description": "Office printer for product labels"
+    },
+    {
+      "id": "zebra-shipping-01",
+      "name": "Zebra ZT410 - Shipping",
+      "ip": "192.168.1.102",
+      "port": 9100,
+      "dpi": 300,
+      "supported_sizes": ["4x6", "4x8"],
+      "default_unit": "inches",
+      "enabled": false,
+      "description": "High-resolution printer for detailed shipping labels (currently disabled)"
+    }
+  ]
+}

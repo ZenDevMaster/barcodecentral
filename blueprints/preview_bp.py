@@ -52,6 +52,7 @@ def generate_preview():
         
         # Get ZPL content (either directly or from template)
         zpl_content = None
+        label_size_from_template = None
         
         if 'zpl' in data:
             # Direct ZPL provided
@@ -63,6 +64,12 @@ def generate_preview():
             variables = data.get('variables', {})
             
             try:
+                # Get template metadata to extract label size
+                template_info = template_manager.get_template(template_name)
+                if template_info.get('size'):
+                    label_size_from_template = template_info['size']
+                    logger.debug(f"Extracted label size from template: {label_size_from_template}")
+                
                 zpl_content = template_manager.render_template(template_name, variables)
             except FileNotFoundError:
                 return jsonify({
@@ -87,10 +94,12 @@ def generate_preview():
                 'error': 'ZPL content cannot be empty'
             }), 400
         
-        # Get parameters
-        label_size = data.get('label_size', '4x6')
+        # Get parameters - use template size if available, otherwise use provided or default
+        label_size = data.get('label_size') or label_size_from_template or '4x6'
         dpi = data.get('dpi', 203)
         format = data.get('format', 'png')
+        
+        logger.debug(f"Using label size: {label_size} (from_template: {label_size_from_template}, provided: {data.get('label_size')})")
         
         # Validate label size
         is_valid, error_msg = validate_label_size(label_size)
@@ -198,6 +207,87 @@ def get_preview(filename):
         return jsonify({
             'success': False,
             'error': f"Error serving preview: {str(e)}"
+        }), 500
+
+
+@preview_bp.route('/template', methods=['POST'])
+def preview_template():
+    """
+    Generate preview from template (convenience endpoint)
+    
+    Request JSON:
+    {
+        "template_name": "example.zpl.j2",
+        "variables": {"order_number": "12345"}
+    }
+    
+    Response:
+    {
+        "success": true,
+        "preview_url": "/api/preview/abc123.png",
+        "filename": "abc123.png"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        logger.debug(f"preview_template received data: {data}")
+        
+        if not data:
+            logger.error("No JSON data provided to preview_template")
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        # Extract template_name and variables
+        template_name = data.get('template_name')
+        variables = data.get('variables', {})
+        
+        logger.debug(f"Template name: {template_name}, Variables: {variables}")
+        
+        if not template_name:
+            logger.error("template_name is required but not provided")
+            return jsonify({
+                'success': False,
+                'error': 'template_name is required'
+            }), 400
+        
+        # Get template metadata to extract label size
+        label_size_from_template = None
+        try:
+            template_info = template_manager.get_template(template_name)
+            if template_info.get('size'):
+                label_size_from_template = template_info['size']
+                logger.debug(f"Extracted label size from template: {label_size_from_template}")
+        except Exception as e:
+            logger.warning(f"Could not extract label size from template: {e}")
+        
+        # Reformat to match generate_preview expected format
+        # Use provided label_size, or template size, or default to 4x6
+        label_size = data.get('label_size') or label_size_from_template or '4x6'
+        
+        preview_data = {
+            'template': template_name,
+            'variables': variables,
+            'label_size': label_size,
+            'dpi': data.get('dpi', 203),
+            'format': data.get('format', 'png')
+        }
+        
+        logger.debug(f"Using label size: {label_size} (from_template: {label_size_from_template}, provided: {data.get('label_size')})")
+        
+        logger.debug(f"Calling generate_preview with data: {preview_data}")
+        
+        # Use the generate_preview endpoint logic
+        request._cached_json = (preview_data, preview_data)
+        return generate_preview()
+        
+    except Exception as e:
+        logger.error(f"Error in preview_template: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f"Internal server error: {str(e)}"
         }), 500
 
 

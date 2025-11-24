@@ -3,21 +3,15 @@ Authentication Blueprint
 Handles user authentication (login/logout)
 """
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask_login import login_user, logout_user, login_required
 from functools import wraps
-from auth import validate_credentials
+from auth import validate_credentials, get_admin_user
 
 auth_bp = Blueprint('auth', __name__)
 
 
-def login_required(f):
-    """Decorator to require login for routes"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user' not in session:
-            flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('auth.login'))
-        return f(*args, **kwargs)
-    return decorated_function
+# Note: We now use Flask-Login's login_required decorator imported above
+# The custom decorator is no longer needed
 
 
 @auth_bp.route('/')
@@ -45,8 +39,13 @@ def login():
             return render_template('login.html')
         
         if validate_credentials(username, password):
+            # Get the admin user and login with Flask-Login
+            user = get_admin_user()
+            login_user(user, remember=remember)
+            
+            # Also set session for backward compatibility
             session['user'] = username
-            session.permanent = remember  # Remember session if checkbox checked
+            session.permanent = remember
             flash(f'Welcome back, {username}!', 'success')
             
             # Redirect to next page if specified, otherwise dashboard
@@ -62,9 +61,11 @@ def login():
 
 
 @auth_bp.route('/logout')
+@login_required
 def logout():
     """Logout user and redirect to login"""
     username = session.get('user', 'User')
-    session.clear()
+    logout_user()  # Flask-Login logout
+    session.clear()  # Clear session
     flash(f'Goodbye, {username}! You have been logged out.', 'info')
     return redirect(url_for('auth.login'))

@@ -3,11 +3,14 @@ Web UI Blueprint
 Handles all web page routes (dashboard, templates, print, history, printers)
 """
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from blueprints.auth_bp import login_required
+from flask_login import login_required
 from template_manager import TemplateManager
 from printer_manager import PrinterManager
 from history_manager import HistoryManager
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 web_bp = Blueprint('web', __name__)
 
@@ -50,8 +53,10 @@ def templates():
     """Template management page"""
     try:
         templates_list = template_manager.list_templates()
+        logger.info(f"Loading templates page with {len(templates_list)} templates")
         return render_template('templates.html', templates=templates_list)
     except Exception as e:
+        logger.error(f'Error loading templates page: {str(e)}', exc_info=True)
         flash(f'Error loading templates: {str(e)}', 'danger')
         return render_template('templates.html', templates=[])
 
@@ -77,12 +82,8 @@ def edit_template(name):
             flash(f'Template "{name}" not found.', 'danger')
             return redirect(url_for('web.templates'))
         
-        # Read ZPL content
-        zpl_path = template.get('zpl_path', '')
-        zpl_content = ''
-        if zpl_path and os.path.exists(zpl_path):
-            with open(zpl_path, 'r') as f:
-                zpl_content = f.read()
+        # Get ZPL content directly from template
+        zpl_content = template.get('content', '')
         
         return render_template('edit_template.html', template=template, zpl_content=zpl_content)
     except Exception as e:
@@ -102,13 +103,16 @@ def print_form():
         selected_template = request.args.get('template')
         template_data = None
         if selected_template:
+            logger.info(f"Loading print form with pre-selected template: {selected_template}")
             template_data = template_manager.get_template(selected_template)
         
-        return render_template('print_form.html', 
-                             templates=templates_list, 
+        logger.info(f"Loading print form with {len(templates_list)} templates and {len(printers_list)} printers")
+        return render_template('print_form.html',
+                             templates=templates_list,
                              printers=printers_list,
                              selected_template=template_data)
     except Exception as e:
+        logger.error(f'Error loading print form: {str(e)}', exc_info=True)
         flash(f'Error loading print form: {str(e)}', 'danger')
         return render_template('print_form.html', templates=[], printers=[])
 
@@ -128,7 +132,7 @@ def history():
         status_filter = request.args.get('status')
         
         # Get history with filters
-        all_history = history_manager.get_history()
+        all_history, _ = history_manager.get_entries(limit=1000)
         
         # Apply filters
         filtered_history = all_history
@@ -181,6 +185,8 @@ def history():
 def printers():
     """Printer management page"""
     try:
+        # Force reload to ensure fresh data after updates
+        printer_manager._printers_cache = None
         printers_list = printer_manager.list_printers()
         return render_template('printers.html', printers=printers_list)
     except Exception as e:

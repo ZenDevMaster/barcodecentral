@@ -1,11 +1,14 @@
 # Barcode Central
 
+> **Repository**: [https://github.com/ZenDevMaster/barcodecentral](https://github.com/ZenDevMaster/barcodecentral)
+
 A modern web application for managing and printing ZPL (Zebra Programming Language) labels to network printers. Built with Flask and designed for easy deployment with Docker.
 
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
+![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Python](https://img.shields.io/badge/python-3.11-blue)
 ![Flask](https://img.shields.io/badge/flask-3.0.0-green)
-![Docker](https://img.shields.io/badge/docker-ready-blue)
 
 ## Features
 
@@ -41,41 +44,62 @@ A modern web application for managing and printing ZPL (Zebra Programming Langua
 
 ## Quick Start
 
+### Clone from GitHub
+
+```bash
+# Clone the repository
+git clone https://github.com/ZenDevMaster/barcodecentral.git
+cd barcodecentral
+```
+
 ### Using Docker (Recommended)
 
 ```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd barcode-central
+# 1. Create required directories
+mkdir -p logs previews
 
 # 2. Create environment configuration
 cp .env.production.example .env
 nano .env  # Edit with your settings
 
-# 3. Deploy
+# 3. Create printer configuration (optional - can also configure via web UI)
+cp printers.json.example printers.json
+nano printers.json  # Edit with your printer details
+
+# 4. Deploy
 ./scripts/deploy.sh --build
 ```
 
 Access the application at `http://localhost:5000`
 
+Default credentials: Check your `.env` file for `LOGIN_USER` and `LOGIN_PASSWORD`
+
 ### Manual Installation
 
 ```bash
-# 1. Install dependencies
+# 1. Create required directories
+mkdir -p logs previews
+
+# 2. Install dependencies
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Configure environment
+# 3. Configure environment
 cp .env.example .env
 nano .env
 
-# 3. Run development server
+# 4. Create printer configuration (optional)
+cp printers.json.example printers.json
+nano printers.json
+
+# 5. Run development server
 ./run_dev.sh
 ```
 
 ## Documentation
 
+- **[GitHub Setup Guide](GITHUB_SETUP.md)** - GitHub integration and workflow
 - **[Deployment Guide](DEPLOYMENT.md)** - Complete deployment instructions
 - **[Architecture](roo-docs/architecture.md)** - System architecture and design
 - **[API Endpoints](roo-docs/endpoints.md)** - API documentation
@@ -431,16 +455,16 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed troubleshooting.
 
 ## License
 
-[Add your license information here]
+MIT License - See [LICENSE](LICENSE) file for details
 
 ## Support
 
 For issues, questions, or contributions:
 
-- Check [DEPLOYMENT.md](DEPLOYMENT.md) for deployment help
-- Review [API Documentation](roo-docs/endpoints.md)
-- Check logs for error details
-- Verify configuration files
+- **GitHub Issues**: [Report bugs or request features](https://github.com/ZenDevMaster/barcodecentral/issues)
+- **GitHub Discussions**: [Ask questions and share ideas](https://github.com/ZenDevMaster/barcodecentral/discussions)
+- **Documentation**: Check [DEPLOYMENT.md](DEPLOYMENT.md) for deployment help
+- **API Docs**: Review [API Documentation](roo-docs/endpoints.md)
 
 ## Acknowledgments
 

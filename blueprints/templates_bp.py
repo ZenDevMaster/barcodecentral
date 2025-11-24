@@ -140,21 +140,68 @@ def create_template():
         if not data:
             return error_response("Request body is required", 400)
         
-        # Extract required fields
-        filename = data.get('filename')
-        content = data.get('content')
+        # Extract required fields - support both old and new formats
+        # Old format: filename + content
+        # New format: name + zpl_content + label_width + label_height
+        filename = data.get('filename') or data.get('name')
+        content = data.get('content') or data.get('zpl_content')
         
         if not filename:
-            return error_response("Field 'filename' is required", 400)
+            return error_response("Field 'filename' or 'name' is required", 400)
         if not content:
-            return error_response("Field 'content' is required", 400)
+            return error_response("Field 'content' or 'zpl_content' is required", 400)
+        
+        # Build label size from separate width/height or combined size string
+        label_size = ''
+        if data.get('label_width') and data.get('label_height'):
+            # Support unit suffixes (e.g., "2.3mm", "1.2cm")
+            width_str = str(data.get('label_width')).strip()
+            height_str = str(data.get('label_height')).strip()
+            
+            # Parse and convert units if needed
+            from utils.label_size import LabelSize
+            from utils.unit_converter import parse_size_string, mm_to_inches
+            
+            # Check if width has unit suffix
+            width_val = width_str
+            height_val = height_str
+            
+            # Convert cm to mm for parsing
+            if width_str.lower().endswith('cm'):
+                width_val = str(float(width_str[:-2].strip()) * 10) + 'mm'
+            if height_str.lower().endswith('cm'):
+                height_val = str(float(height_str[:-2].strip()) * 10) + 'mm'
+            
+            # Parse with unit support
+            try:
+                # Try parsing as size string with units
+                temp_size = f"{width_val}x{height_val}"
+                width, height, unit = parse_size_string(temp_size)
+                
+                # Convert to inches for storage (standard format)
+                if unit.value == 'mm':
+                    width = mm_to_inches(width)
+                    height = mm_to_inches(height)
+                
+                label_size = f"{width:.1f}x{height:.1f}"
+            except (ValueError, AttributeError):
+                # Fall back to treating as plain numbers (inches)
+                try:
+                    width = float(width_str.rstrip('inchesIN '))
+                    height = float(height_str.rstrip('inchesIN '))
+                    label_size = f"{width:.1f}x{height:.1f}"
+                except ValueError:
+                    pass
+        elif data.get('label_size') or data.get('size'):
+            label_size = data.get('label_size', data.get('size', ''))
         
         # Build metadata
         metadata = {
             'name': data.get('name', filename),
             'description': data.get('description', ''),
-            'size': data.get('label_size', data.get('size', '')),
+            'size': label_size,
             'created': data.get('created', ''),
+            'variables': data.get('variables', [])
         }
         
         # Create template
@@ -204,16 +251,64 @@ def update_template(filename):
         if not data:
             return error_response("Request body is required", 400)
         
-        # Extract content
-        content = data.get('content')
+        # Log incoming request for debugging
+        logger.info(f"[UPDATE_TEMPLATE] Received data keys: {list(data.keys())}")
+        logger.info(f"[UPDATE_TEMPLATE] Has 'content': {bool(data.get('content'))}, Has 'zpl_content': {bool(data.get('zpl_content'))}")
+        
+        # Extract content - support both 'content' and 'zpl_content' field names
+        content = data.get('content') or data.get('zpl_content')
         if not content:
-            return error_response("Field 'content' is required", 400)
+            return error_response("Field 'content' or 'zpl_content' is required", 400)
+        
+        # Build label size from separate width/height or combined size string
+        label_size = ''
+        if data.get('label_width') and data.get('label_height'):
+            # Support unit suffixes (e.g., "2.3mm", "1.2cm")
+            width_str = str(data.get('label_width')).strip()
+            height_str = str(data.get('label_height')).strip()
+            
+            # Parse and convert units if needed
+            from utils.label_size import LabelSize
+            from utils.unit_converter import parse_size_string, mm_to_inches
+            
+            # Check if width has unit suffix
+            width_val = width_str
+            height_val = height_str
+            
+            # Convert cm to mm for parsing
+            if width_str.lower().endswith('cm'):
+                width_val = str(float(width_str[:-2].strip()) * 10) + 'mm'
+            if height_str.lower().endswith('cm'):
+                height_val = str(float(height_str[:-2].strip()) * 10) + 'mm'
+            
+            # Parse with unit support
+            try:
+                # Try parsing as size string with units
+                temp_size = f"{width_val}x{height_val}"
+                width, height, unit = parse_size_string(temp_size)
+                
+                # Convert to inches for storage (standard format)
+                if unit.value == 'mm':
+                    width = mm_to_inches(width)
+                    height = mm_to_inches(height)
+                
+                label_size = f"{width:.1f}x{height:.1f}"
+            except (ValueError, AttributeError):
+                # Fall back to treating as plain numbers (inches)
+                try:
+                    width = float(width_str.rstrip('inchesIN '))
+                    height = float(height_str.rstrip('inchesIN '))
+                    label_size = f"{width:.1f}x{height:.1f}"
+                except ValueError:
+                    pass
+        elif data.get('label_size') or data.get('size'):
+            label_size = data.get('label_size', data.get('size', ''))
         
         # Build metadata
         metadata = {
             'name': data.get('name', filename),
             'description': data.get('description', ''),
-            'size': data.get('label_size', data.get('size', '')),
+            'size': label_size,
         }
         
         # Update template

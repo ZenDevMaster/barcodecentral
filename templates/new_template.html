@@ -45,14 +45,16 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="labelWidth" class="form-label">Width (inches) *</label>
-                                <input type="number" class="form-control" id="labelWidth" name="label_width" 
-                                       step="0.1" min="0.1" placeholder="4" required>
+                                <label for="labelWidth" class="form-label">Width *</label>
+                                <input type="text" class="form-control" id="labelWidth" name="label_width"
+                                       placeholder="4 or 101.6mm or 10.16cm" required>
+                                <small class="form-text text-muted">Supports: inches (default), mm, cm</small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="labelHeight" class="form-label">Height (inches) *</label>
-                                <input type="number" class="form-control" id="labelHeight" name="label_height" 
-                                       step="0.1" min="0.1" placeholder="6" required>
+                                <label for="labelHeight" class="form-label">Height *</label>
+                                <input type="text" class="form-control" id="labelHeight" name="label_height"
+                                       placeholder="6 or 152.4mm or 15.24cm" required>
+                                <small class="form-text text-muted">Supports: inches (default), mm, cm</small>
                             </div>
                         </div>
 
@@ -184,8 +186,8 @@ $(document).ready(function() {
         const formData = {
             name: $('#templateName').val().trim(),
             description: $('#description').val().trim(),
-            label_width: parseFloat($('#labelWidth').val()),
-            label_height: parseFloat($('#labelHeight').val()),
+            label_width: $('#labelWidth').val().trim(),
+            label_height: $('#labelHeight').val().trim(),
             zpl_content: editor.getValue(),
             variables: []
         };
@@ -250,15 +252,56 @@ async function generatePreview(zplContent, variables) {
     $('#previewContent').empty();
     $('#previewError').hide();
 
+    // Get label dimensions from form (parse units if present)
+    const widthStr = $('#labelWidth').val().trim();
+    const heightStr = $('#labelHeight').val().trim();
+    
+    // Parse dimensions with unit support
+    let labelWidth = 4;
+    let labelHeight = 6;
+    
     try {
-        const response = await fetch('/api/preview', {
+        // Remove unit suffixes and convert to inches for preview
+        let width = widthStr;
+        let height = heightStr;
+        
+        // Convert cm to mm first
+        if (widthStr.toLowerCase().endsWith('cm')) {
+            width = (parseFloat(widthStr) * 10) + 'mm';
+        }
+        if (heightStr.toLowerCase().endsWith('cm')) {
+            height = (parseFloat(heightStr) * 10) + 'mm';
+        }
+        
+        // Convert mm to inches
+        if (width.toLowerCase().endsWith('mm')) {
+            labelWidth = parseFloat(width) / 25.4;
+        } else {
+            labelWidth = parseFloat(width.replace(/[^0-9.]/g, '')) || 4;
+        }
+        
+        if (height.toLowerCase().endsWith('mm')) {
+            labelHeight = parseFloat(height) / 25.4;
+        } else {
+            labelHeight = parseFloat(height.replace(/[^0-9.]/g, '')) || 6;
+        }
+    } catch (e) {
+        console.error('Error parsing dimensions:', e);
+    }
+    
+    const labelSize = `${labelWidth.toFixed(1)}x${labelHeight.toFixed(1)}`;
+
+    try {
+        const response = await fetch('/api/preview/generate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                zpl_content: zplContent,
-                variables: variables
+                zpl: zplContent,
+                variables: variables,
+                label_size: labelSize,
+                dpi: 203
             })
         });
 

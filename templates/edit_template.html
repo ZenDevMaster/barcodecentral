@@ -45,14 +45,16 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="labelWidth" class="form-label">Width (inches) *</label>
-                                <input type="number" class="form-control" id="labelWidth" name="label_width" 
-                                       step="0.1" min="0.1" value="{{ template.label_width }}" required>
+                                <label for="labelWidth" class="form-label">Width *</label>
+                                <input type="text" class="form-control" id="labelWidth" name="label_width"
+                                       value="{{ template.size_width }}" placeholder="4 or 101.6mm or 10.16cm" required>
+                                <small class="form-text text-muted">Supports: inches (default), mm, cm</small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="labelHeight" class="form-label">Height (inches) *</label>
-                                <input type="number" class="form-control" id="labelHeight" name="label_height" 
-                                       step="0.1" min="0.1" value="{{ template.label_height }}" required>
+                                <label for="labelHeight" class="form-label">Height *</label>
+                                <input type="text" class="form-control" id="labelHeight" name="label_height"
+                                       value="{{ template.size_height }}" placeholder="6 or 152.4mm or 15.24cm" required>
+                                <small class="form-text text-muted">Supports: inches (default), mm, cm</small>
                             </div>
                         </div>
 
@@ -260,15 +262,22 @@ async function generatePreview(zplContent, variables) {
     $('#previewContent').empty();
     $('#previewError').hide();
 
+    // Get label dimensions from form
+    const labelWidth = parseFloat($('#labelWidth').val()) || 4;
+    const labelHeight = parseFloat($('#labelHeight').val()) || 6;
+    const labelSize = `${labelWidth}x${labelHeight}`;
+
     try {
-        const response = await fetch('/api/preview', {
+        const response = await fetch('/api/preview/generate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                zpl_content: zplContent,
-                variables: variables
+                zpl: zplContent,
+                variables: variables,
+                label_size: labelSize,
+                dpi: 203
             })
         });
 

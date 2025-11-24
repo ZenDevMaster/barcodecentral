@@ -6,6 +6,7 @@ import os
 import logging
 from datetime import timedelta
 from flask import Flask, render_template
+from flask_login import LoginManager
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -13,6 +14,17 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'auth.login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'warning'
+
+# Import and register user_loader callback
+from auth import load_user
+login_manager.user_loader(load_user)
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -35,11 +47,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Favicon handler to prevent 404 errors
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon or return 204 No Content"""
+    from flask import send_from_directory
+    favicon_path = os.path.join(app.root_path, 'static', 'favicon.ico')
+    if os.path.exists(favicon_path):
+        return send_from_directory(os.path.join(app.root_path, 'static'),
+                                   'favicon.ico', mimetype='image/vnd.microsoft.icon')
+    return '', 204  # No Content - prevents 404 in logs
+
+
 # Error handlers
 @app.errorhandler(404)
 def not_found_error(error):
     """Handle 404 errors"""
-    logger.warning(f"404 error: {error}")
+    # Don't log favicon 404s as they're expected
+    if 'favicon.ico' not in str(error):
+        logger.warning(f"404 error: {error}")
     return render_template('404.html'), 404
 
 
