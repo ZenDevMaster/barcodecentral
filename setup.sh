@@ -1,6 +1,6 @@
 #!/bin/bash
 # Barcode Central - Interactive Setup Script
-# This script configures your deployment with an easy-to-use wizard
+# Configures deployment with logical real-world scenarios
 
 set -e
 
@@ -23,7 +23,9 @@ HTTP_PORT="5000"
 HTTPS_PORT="443"
 HEADSCALE_PORT="8080"
 USE_TRAEFIK=false
+USE_SSL=false
 USE_HEADSCALE=false
+EXTERNAL_ACCESS=false
 
 # Helper functions
 print_header() {
@@ -69,95 +71,174 @@ echo ""
 echo "Press Enter to continue..."
 read
 
-# Step 1: Deployment Type
+# Step 1: LAN-only or External Access
 clear
-print_header "[1/8] Deployment Type"
-echo "Choose your deployment scenario:"
+print_header "[1/7] Network Access"
+echo "How will you access Barcode Central?"
 echo ""
-echo "1) Basic       - HTTP only, local printers, simple setup"
-echo "2) Production  - HTTPS with Traefik, automatic SSL certificates"
-echo "3) Distributed - Full stack with Traefik + Headscale mesh network"
+echo "1) LAN only - Access from local network only"
+echo "   • Simple HTTP setup (port 5000)"
+echo "   • Printers on same network or via direct IP"
+echo "   • You can still add your own reverse proxy (nginx, etc.)"
+echo "   • No SSL configuration needed"
 echo ""
-read -p "Enter choice [1-3]: " deploy_choice
+echo "2) External access - Access from internet"
+echo "   • Requires domain name (FQDN)"
+echo "   • Optional Traefik reverse proxy with automatic SSL"
+echo "   • Can be combined with Headscale for remote printers"
+echo ""
+read -p "Enter choice [1-2]: " access_choice
 
-case $deploy_choice in
+case $access_choice in
     1)
-        DEPLOYMENT_TYPE="basic"
-        print_info "Selected: Basic deployment"
+        DEPLOYMENT_TYPE="lan-only"
+        EXTERNAL_ACCESS=false
+        print_info "Selected: LAN-only deployment"
         ;;
     2)
-        DEPLOYMENT_TYPE="production"
-        USE_TRAEFIK=true
-        print_info "Selected: Production deployment with Traefik"
-        ;;
-    3)
-        DEPLOYMENT_TYPE="distributed"
-        USE_TRAEFIK=true
-        USE_HEADSCALE=true
-        print_info "Selected: Distributed deployment with Traefik + Headscale"
+        EXTERNAL_ACCESS=true
+        print_info "Selected: External access deployment"
         ;;
     *)
-        print_error "Invalid choice. Defaulting to Basic."
-        DEPLOYMENT_TYPE="basic"
+        print_error "Invalid choice. Defaulting to LAN-only."
+        DEPLOYMENT_TYPE="lan-only"
+        EXTERNAL_ACCESS=false
         ;;
 esac
 
 echo ""
 sleep 1
 
-# Step 2: Domain Configuration (if using Traefik)
-if [ "$USE_TRAEFIK" = true ]; then
+# Step 2: Domain Configuration (if external access)
+if [ "$EXTERNAL_ACCESS" = true ]; then
     clear
-    print_header "[2/8] Domain Configuration"
-    echo "Traefik requires a domain name for automatic HTTPS."
+    print_header "[2/7] Domain Configuration"
+    echo "Enter your fully qualified domain name (FQDN)."
+    echo "Example: print.example.com"
     echo ""
-    read -p "Enter your domain (e.g., print.example.com): " DOMAIN
+    read -p "Domain (FQDN): " DOMAIN
     
     while [ -z "$DOMAIN" ]; do
-        print_error "Domain cannot be empty"
-        read -p "Enter your domain: " DOMAIN
-    done
-    
-    echo ""
-    read -p "Enter email for Let's Encrypt notifications: " ACME_EMAIL
-    
-    while [ -z "$ACME_EMAIL" ]; do
-        print_error "Email cannot be empty"
-        read -p "Enter email: " ACME_EMAIL
+        print_error "Domain cannot be empty for external access"
+        read -p "Domain (FQDN): " DOMAIN
     done
     
     print_success "Domain configured: $DOMAIN"
     echo ""
     sleep 1
+    
+    # Step 3: Traefik Configuration
+    clear
+    print_header "[3/7] Reverse Proxy (Traefik)"
+    echo "Do you want to use Traefik as a reverse proxy?"
+    echo ""
+    echo "Traefik provides:"
+    echo "  • Automatic routing to your application"
+    echo "  • Optional automatic SSL/HTTPS with Let's Encrypt"
+    echo "  • Security headers"
+    echo "  • Easy configuration"
+    echo ""
+    echo "If you choose 'no', you can use your own reverse proxy (nginx, etc.)"
+    echo ""
+    read -p "Use Traefik? [Y/n]: " use_traefik_choice
+    
+    if [[ ! "$use_traefik_choice" =~ ^[Nn]$ ]]; then
+        USE_TRAEFIK=true
+        DEPLOYMENT_TYPE="external-traefik"
+        print_success "Traefik enabled"
+        
+        # Step 4: SSL Configuration
+        echo ""
+        echo "Do you want automatic SSL/HTTPS with Let's Encrypt?"
+        echo ""
+        echo "Requirements:"
+        echo "  • Domain must point to this server's public IP"
+        echo "  • Ports 80 and 443 must be accessible from internet"
+        echo "  • Valid email address for Let's Encrypt notifications"
+        echo ""
+        read -p "Enable automatic SSL? [Y/n]: " use_ssl_choice
+        
+        if [[ ! "$use_ssl_choice" =~ ^[Nn]$ ]]; then
+            USE_SSL=true
+            
+            echo ""
+            read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
+            
+            while [ -z "$ACME_EMAIL" ]; then
+                print_error "Email cannot be empty"
+                read -p "Email: " ACME_EMAIL
+            done
+            
+            print_success "SSL enabled with Let's Encrypt"
+        else
+            print_info "SSL disabled - Traefik will use HTTP only"
+        fi
+    else
+        DEPLOYMENT_TYPE="external-manual"
+        print_info "Traefik disabled - you can configure your own reverse proxy"
+    fi
 else
-    print_info "[2/8] Skipping domain configuration (not using Traefik)"
-    sleep 1
+    print_info "[2/7] Skipping domain configuration (LAN-only)"
+    print_info "[3/7] Skipping Traefik configuration (LAN-only)"
 fi
 
-# Step 3: Headscale Configuration
-if [ "$USE_HEADSCALE" = true ]; then
-    clear
-    print_header "[3/8] Headscale Configuration"
-    echo "Headscale coordinates the mesh network for distributed printers."
-    echo ""
-    read -p "Enter Headscale subdomain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+echo ""
+sleep 1
+
+# Step 5: Headscale Mesh VPN
+clear
+print_header "[4/7] Headscale Mesh VPN (Optional)"
+echo "Do you want to enable Headscale for distributed printing?"
+echo ""
+echo "Headscale is a self-hosted mesh VPN that allows you to:"
+echo "  • Connect printers on remote networks securely"
+echo "  • Access printers at different physical locations"
+echo "  • Create a secure mesh network for distributed printing"
+echo "  • Use Raspberry Pis as print servers at remote sites"
+echo ""
+echo "Choose 'yes' if you have printers at multiple locations."
+echo "Choose 'no' if all printers are on the same network as this server."
+echo ""
+read -p "Enable Headscale mesh VPN? [y/N]: " use_headscale_choice
+
+if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
+    USE_HEADSCALE=true
     
-    if [ -z "$HEADSCALE_DOMAIN" ]; then
-        HEADSCALE_DOMAIN="headscale.${DOMAIN}"
-        print_info "Using default: $HEADSCALE_DOMAIN"
+    echo ""
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "Headscale needs a domain name."
+        read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
+        
+        if [[ "$same_domain" =~ ^[Nn]$ ]]; then
+            read -p "Enter Headscale domain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+        else
+            HEADSCALE_DOMAIN="$DOMAIN"
+        fi
+    else
+        echo "Headscale needs to be accessible from remote locations."
+        read -p "Enter Headscale domain or IP (e.g., headscale.example.com or 1.2.3.4): " HEADSCALE_DOMAIN
+        
+        while [ -z "$HEADSCALE_DOMAIN" ]; then
+            print_error "Headscale domain/IP cannot be empty"
+            read -p "Enter Headscale domain or IP: " HEADSCALE_DOMAIN
+        done
     fi
     
-    print_success "Headscale configured: $HEADSCALE_DOMAIN"
     echo ""
-    sleep 1
+    read -p "Headscale port [8080]: " HEADSCALE_PORT
+    HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
+    
+    print_success "Headscale enabled: $HEADSCALE_DOMAIN:$HEADSCALE_PORT"
 else
-    print_info "[3/8] Skipping Headscale configuration"
-    sleep 1
+    print_info "Headscale disabled - all printers must be on local network"
 fi
 
-# Step 4: Application Credentials
+echo ""
+sleep 1
+
+# Step 6: Application Credentials
 clear
-print_header "[4/8] Application Credentials"
+print_header "[5/7] Application Credentials"
 echo "Configure admin access for Barcode Central."
 echo ""
 read -p "Admin username [admin]: " LOGIN_USER
@@ -193,50 +274,68 @@ print_success "Secret key generated"
 echo ""
 sleep 1
 
-# Step 5: Network Configuration
+# Step 7: Port Configuration
 clear
-print_header "[5/8] Network Configuration"
-echo "Configure network ports for your deployment."
-echo ""
+print_header "[6/7] Port Configuration"
 
 if [ "$USE_TRAEFIK" = false ]; then
+    echo "Configure the HTTP port for the application."
+    echo ""
     read -p "HTTP port [5000]: " HTTP_PORT
     HTTP_PORT=${HTTP_PORT:-5000}
+    print_success "Application will be accessible on port $HTTP_PORT"
+else
+    print_info "Traefik will handle ports 80 (HTTP) and 443 (HTTPS)"
+    HTTP_PORT="5000"  # Internal port
 fi
 
-if [ "$USE_HEADSCALE" = true ]; then
-    read -p "Headscale port [8080]: " HEADSCALE_PORT
-    HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
-fi
-
-print_success "Network configuration complete"
 echo ""
 sleep 1
 
-# Step 6: Review Configuration
+# Step 8: Review Configuration
 clear
-print_header "[6/8] Review Configuration"
+print_header "[7/7] Review Configuration"
 echo "Please review your configuration:"
 echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Deployment Type:    $DEPLOYMENT_TYPE"
 echo "Admin Username:     $LOGIN_USER"
 echo "Admin Password:     ${LOGIN_PASSWORD:0:4}****${LOGIN_PASSWORD: -4}"
 
-if [ "$USE_TRAEFIK" = true ]; then
-    echo "Domain:             $DOMAIN"
-    echo "SSL Email:          $ACME_EMAIL"
-    echo "HTTPS Port:         $HTTPS_PORT"
+if [ "$EXTERNAL_ACCESS" = true ]; then
+    echo ""
+    echo "External Access:"
+    echo "  Domain:           $DOMAIN"
+    if [ "$USE_TRAEFIK" = true ]; then
+        echo "  Traefik:          Enabled"
+        if [ "$USE_SSL" = true ]; then
+            echo "  SSL:              Enabled (Let's Encrypt)"
+            echo "  SSL Email:        $ACME_EMAIL"
+            echo "  Access URL:       https://$DOMAIN"
+        else
+            echo "  SSL:              Disabled"
+            echo "  Access URL:       http://$DOMAIN"
+        fi
+    else
+        echo "  Traefik:          Disabled (manual reverse proxy)"
+        echo "  Port:             $HTTP_PORT"
+    fi
+else
+    echo ""
+    echo "LAN Access:"
+    echo "  Port:             $HTTP_PORT"
+    echo "  Access URL:       http://localhost:$HTTP_PORT"
 fi
 
 if [ "$USE_HEADSCALE" = true ]; then
-    echo "Headscale Domain:   $HEADSCALE_DOMAIN"
-    echo "Headscale Port:     $HEADSCALE_PORT"
+    echo ""
+    echo "Headscale Mesh VPN:"
+    echo "  Domain:           $HEADSCALE_DOMAIN"
+    echo "  Port:             $HEADSCALE_PORT"
+    echo "  WireGuard Port:   41641/udp"
 fi
 
-if [ "$USE_TRAEFIK" = false ]; then
-    echo "HTTP Port:          $HTTP_PORT"
-fi
-
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 read -p "Is this configuration correct? [Y/n]: " confirm
 
@@ -245,9 +344,9 @@ if [[ "$confirm" =~ ^[Nn]$ ]]; then
     exit 1
 fi
 
-# Step 7: Generate Files
+# Generate Files
 clear
-print_header "[7/8] Generating Configuration Files"
+print_header "Generating Configuration Files"
 
 # Create .env file
 print_info "Creating .env file..."
@@ -268,9 +367,12 @@ LOGIN_USER=$LOGIN_USER
 LOGIN_PASSWORD=$LOGIN_PASSWORD
 
 # Session
-SESSION_COOKIE_SECURE=$([ "$USE_TRAEFIK" = true ] && echo "true" || echo "false")
+SESSION_COOKIE_SECURE=$([ "$USE_SSL" = true ] && echo "true" || echo "false")
 SESSION_COOKIE_HTTPONLY=true
 SESSION_COOKIE_SAMESITE=Lax
+
+# Network
+HTTP_PORT=$HTTP_PORT
 
 EOF
 
@@ -281,7 +383,7 @@ if [ "$USE_TRAEFIK" = true ]; then
 # Traefik Configuration
 # ============================================================================
 DOMAIN=$DOMAIN
-ACME_EMAIL=$ACME_EMAIL
+$([ "$USE_SSL" = true ] && echo "ACME_EMAIL=$ACME_EMAIL" || echo "# SSL disabled")
 
 EOF
 fi
@@ -293,6 +395,7 @@ if [ "$USE_HEADSCALE" = true ]; then
 # Headscale Configuration
 # ============================================================================
 HEADSCALE_DOMAIN=$HEADSCALE_DOMAIN
+HEADSCALE_PORT=$HEADSCALE_PORT
 HEADSCALE_SERVER_URL=http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
 # TAILSCALE_AUTHKEY will be generated after first deployment
 
@@ -300,11 +403,15 @@ EOF
 fi
 
 # Add Docker Compose profiles
+PROFILES=""
+[ "$USE_TRAEFIK" = true ] && PROFILES="traefik"
+[ "$USE_HEADSCALE" = true ] && PROFILES="${PROFILES:+$PROFILES,}headscale"
+
 cat >> .env << EOF
 # ============================================================================
 # Docker Compose Profiles
 # ============================================================================
-COMPOSE_PROFILES=$([ "$USE_TRAEFIK" = true ] && echo -n "traefik" || echo -n "")$([ "$USE_HEADSCALE" = true ] && echo ",headscale" || echo "")
+COMPOSE_PROFILES=$PROFILES
 
 EOF
 
@@ -313,14 +420,14 @@ print_success "Created .env file"
 
 # Generate docker-compose.yml
 print_info "Generating docker-compose.yml..."
-cat > docker-compose.yml << 'EOF'
+cat > docker-compose.yml << 'COMPOSE_EOF'
 # Barcode Central - Docker Compose Configuration
 # Generated by setup.sh
 
 version: '3.8'
 
 services:
-  # Main Application (Always Enabled)
+  # Main Application
   app:
     build:
       context: .
@@ -351,6 +458,9 @@ services:
     
     networks:
       - barcode-network
+    
+    labels:
+      - "com.barcodecentral.service=app"
 
   # Traefik Reverse Proxy (Optional)
   traefik:
@@ -386,19 +496,6 @@ services:
     
     networks:
       - barcode-network
-    
-    labels:
-      - "traefik.enable=true"
-
-  # Update app service with Traefik labels when Traefik is enabled
-  app-traefik:
-    extends:
-      service: app
-    
-    profiles:
-      - traefik
-    
-    ports: []  # Remove direct port exposure
     
     labels:
       - "traefik.enable=true"
@@ -469,6 +566,7 @@ services:
     
     networks:
       - barcode-network
+      - headscale-network
     
     depends_on:
       - headscale
@@ -477,8 +575,12 @@ networks:
   barcode-network:
     name: barcode-network
     driver: bridge
+  
+  headscale-network:
+    name: headscale-network
+    driver: bridge
 
-EOF
+COMPOSE_EOF
 
 print_success "Created docker-compose.yml"
 
@@ -569,36 +671,43 @@ chmod 644 history.json printers.json 2>/dev/null || true
 
 print_success "Set file permissions"
 
-# Step 8: Next Steps
+# Final instructions
 clear
-print_header "[8/8] Setup Complete!"
+print_header "Setup Complete!"
 echo ""
 print_success "Configuration files generated successfully!"
 echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Your credentials:"
 echo "  Username: $LOGIN_USER"
 echo "  Password: $LOGIN_PASSWORD"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 print_warning "IMPORTANT: Save these credentials securely!"
 echo ""
 echo "Next steps:"
 echo ""
 
-if [ "$USE_TRAEFIK" = true ]; then
+# DNS configuration
+if [ "$EXTERNAL_ACCESS" = true ]; then
     echo "1. Configure DNS:"
-    echo "   Create A record: $DOMAIN → $(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip')"
-    if [ "$USE_HEADSCALE" = true ]; then
-        echo "   Create A record: $HEADSCALE_DOMAIN → $(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip')"
+    SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "your-server-ip")
+    echo "   Create A record: $DOMAIN → $SERVER_IP"
+    if [ "$USE_HEADSCALE" = true ] && [ "$HEADSCALE_DOMAIN" != "$DOMAIN" ]; then
+        echo "   Create A record: $HEADSCALE_DOMAIN → $SERVER_IP"
     fi
     echo ""
 fi
 
+# Firewall configuration
 echo "2. Configure firewall:"
 echo "   Run: ./scripts/configure-firewall.sh"
 echo "   Or manually open ports:"
 if [ "$USE_TRAEFIK" = true ]; then
     echo "   - 80/tcp (HTTP)"
-    echo "   - 443/tcp (HTTPS)"
+    if [ "$USE_SSL" = true ]; then
+        echo "   - 443/tcp (HTTPS)"
+    fi
 else
     echo "   - $HTTP_PORT/tcp (HTTP)"
 fi
@@ -608,6 +717,7 @@ if [ "$USE_HEADSCALE" = true ]; then
 fi
 echo ""
 
+# Start application
 echo "3. Start the application:"
 echo "   docker compose up -d"
 echo ""
@@ -617,25 +727,47 @@ echo "   docker compose ps"
 echo "   docker compose logs -f"
 echo ""
 
+# Headscale-specific instructions
 if [ "$USE_HEADSCALE" = true ]; then
-    echo "5. Generate Tailscale auth key (after deployment):"
-    echo "   ./scripts/generate-authkey.sh"
+    echo "5. Setup Headscale mesh network:"
+    echo "   a) Generate auth key:"
+    echo "      ./scripts/generate-authkey.sh"
     echo ""
-    echo "6. Setup Raspberry Pi print servers:"
-    echo "   See: raspberry-pi-setup.sh"
+    echo "   b) Setup Raspberry Pi print servers at each location:"
+    echo "      On each Raspberry Pi, run:"
+    echo "      curl -sSL https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh | bash"
+    echo ""
+    echo "   c) Enable subnet routes:"
+    echo "      ./scripts/enable-routes.sh"
+    echo ""
+    echo "   d) Verify connectivity:"
+    echo "      docker exec -it barcode-central ping <raspberry-pi-tailscale-ip>"
+    echo "      docker exec -it barcode-central ping <printer-ip>"
     echo ""
 fi
 
+# Access URL
 if [ "$USE_TRAEFIK" = true ]; then
-    echo "Access your application at: https://$DOMAIN"
+    if [ "$USE_SSL" = true ]; then
+        echo "Access your application at: https://$DOMAIN"
+    else
+        echo "Access your application at: http://$DOMAIN"
+    fi
 else
-    echo "Access your application at: http://localhost:$HTTP_PORT"
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "Access your application at: http://$DOMAIN:$HTTP_PORT"
+    else
+        echo "Access your application at: http://localhost:$HTTP_PORT"
+    fi
 fi
 
 echo ""
 print_info "For detailed documentation, see:"
 echo "  - QUICKSTART.md"
 echo "  - PRODUCTION_DEPLOYMENT_GUIDE.md"
+if [ "$USE_HEADSCALE" = true ]; then
+    echo "  - RASPBERRY_PI_SETUP.md"
+fi
 echo ""
 
 print_success "Setup complete! Happy printing! 🖨️"
