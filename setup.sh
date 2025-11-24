@@ -164,7 +164,7 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
             echo ""
             read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
             
-            while [ -z "$ACME_EMAIL" ]; then
+            while [ -z "$ACME_EMAIL" ]; do
                 print_error "Email cannot be empty"
                 read -p "Email: " ACME_EMAIL
             done
@@ -218,7 +218,7 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
         echo "Headscale needs to be accessible from remote locations."
         read -p "Enter Headscale domain or IP (e.g., headscale.example.com or 1.2.3.4): " HEADSCALE_DOMAIN
         
-        while [ -z "$HEADSCALE_DOMAIN" ]; then
+        while [ -z "$HEADSCALE_DOMAIN" ]; do
             print_error "Headscale domain/IP cannot be empty"
             read -p "Enter Headscale domain or IP: " HEADSCALE_DOMAIN
         done
