@@ -638,7 +638,7 @@ $(document).ready(function() {
     // Auto-select template if provided in URL (only if not reprinting)
     {% if selected_template %}
     if (!isReprinting) {
-        $('#templateSelect').val('{{ selected_template.name }}').trigger('change');
+        $('#templateSelect').val('{{ selected_template.filename }}').trigger('change');
     }
     {% endif %}
 });

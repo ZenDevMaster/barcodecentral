@@ -1,0 +1,39 @@
+^XA
+^FX Template Metadata
+^FX name: Amazon FN SKU Replica
+^FX description: 
+^FX size: 2.0x1.0
+^FX size_unit: inches
+^FX size_width: 2.0
+^FX size_height: 1.0
+^FX modified: 2025-11-24T16:10:34.838265Z
+
+^PW406
+^LL203
+
+{% set product_title = product_title | default("Example Product Title") %}
+{% set asin = asin | default("") %}
+{% set sold_as_set = sold_as_set | default(false) %}
+{% set fnsku = fnsku | default("X00123ABCD45") %}
+{% set country_of_origin = country_of_origin | default("Made in China") %}
+
+^FX --- Amazon FNSKU Label (1" x 2", 203 dpi, Official-Style) ---
+
+^CF0,20
+^FO20,10^FD{{ product_title }}{% if asin %} ({{ asin }}){% endif %}^FS
+
+^BY2,2,60
+^FO20,40^BCN,60,N,N,N
+^FD{{ fnsku }}^FS
+
+^CF0,18
+^FO20,115^FD{{ fnsku }}^FS
+
+^CF0,18
+{% if sold_as_set %}
+^FO20,140^FDSold as Set / Do Not Separate^FS
+{% else %}
+^FO20,140^FD{{ country_of_origin }}^FS
+{% endif %}
+
+^XZ

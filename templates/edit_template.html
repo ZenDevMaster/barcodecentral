@@ -150,7 +150,8 @@
 
 <script>
 $(document).ready(function() {
-    const templateName = '{{ template.name }}';
+    const templateFilename = '{{ template.filename }}';
+    const templateDisplayName = '{{ template.name }}';
 
     // Initialize Ace Editor
     const editor = ace.edit("editor");
@@ -201,7 +202,7 @@ $(document).ready(function() {
         }
 
         try {
-            const response = await fetch(`/api/templates/${templateName}`, {
+            const response = await fetch(`/api/templates/${templateFilename}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'

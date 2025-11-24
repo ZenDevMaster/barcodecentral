@@ -1,6 +1,6 @@
 # Barcode Central - Quick Start Guide
 
-Get up and running with Barcode Central in minutes!
+Get up and running with Barcode Central in minutes with our **interactive setup wizard**!
 
 ---
 
@@ -12,89 +12,169 @@ Before you begin, ensure you have:
 - **Docker** 20.10 or higher
 - **Docker Compose** 2.0 or higher
 - **Git** (to clone the repository)
-- 2GB RAM minimum
+- 2GB RAM minimum (4GB for distributed setup)
 - 1GB disk space
 
-### For Development/Manual Deployment
-- **Python** 3.11 or higher
-- **pip** package manager
-- **Git** (to clone the repository)
-- Virtual environment tool (venv or virtualenv)
+### For Distributed Printer Setup (Optional)
+- **Raspberry Pi** 3B+ or newer (one per location)
+- **Network printers** with TCP/IP connectivity (port 9100)
+- **Domain name** (for HTTPS with Traefik)
 
 ---
 
-## Quick Start with Docker (5 Minutes)
+## 🚀 Quick Start with Interactive Setup (2 Minutes)
 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd app.barcodecentral
+git clone https://github.com/ZenDevMaster/barcodecentral.git
+cd barcodecentral
 ```
 
-### Step 2: Configure Environment
+### Step 2: Run Setup Wizard
 
 ```bash
-# Copy the production environment template
-cp .env.production.example .env
-
-# Edit the configuration
-nano .env
+./setup.sh
 ```
 
-**Required Configuration:**
-```env
-# Change these values!
-SECRET_KEY=your-unique-secret-key-here
-LOGIN_USER=admin
-LOGIN_PASSWORD=your-secure-password
-```
+The interactive wizard will guide you through:
+- ✅ Deployment type selection (Basic/Production/Distributed)
+- ✅ Domain configuration (if using Traefik)
+- ✅ Headscale mesh network setup (if distributed)
+- ✅ Admin credentials
+- ✅ Network ports
+- ✅ Automatic file generation
 
-**Generate a secure secret key:**
-```bash
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
+**That's it!** The wizard creates all configuration files for you.
 
 ### Step 3: Deploy
 
 ```bash
-# Build and start the application
-./scripts/deploy.sh --build
-
-# Or use docker-compose directly
-docker-compose up -d --build
+docker compose up -d
 ```
 
-### Step 4: Access the Application
+### Step 4: Configure Firewall (if needed)
 
-Open your browser and navigate to:
+```bash
+./scripts/configure-firewall.sh
+```
+
+### Step 5: Access the Application
+
+**Basic deployment:**
 ```
 http://localhost:5000
 ```
 
-**Login with your configured credentials:**
-- Username: (from `LOGIN_USER` in `.env`)
-- Password: (from `LOGIN_PASSWORD` in `.env`)
+**Production deployment (with Traefik):**
+```
+https://your-domain.com
+```
 
-### Step 5: Verify Deployment
+**Login with credentials from setup wizard**
+
+### Step 6: Verify Deployment
 
 ```bash
 # Check container status
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Check health
 curl http://localhost:5000/api/health
 ```
 
-**Expected output:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-11-24T10:00:00Z"
-}
+---
+
+## 🌐 Distributed Printer Setup (Optional)
+
+If you chose "Distributed" deployment, set up Raspberry Pi print servers:
+
+### On VPS: Generate Auth Key
+
+```bash
+./scripts/generate-authkey.sh
+```
+
+Copy the generated key.
+
+### On Raspberry Pi: One-Liner Setup
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh | bash
+```
+
+Or download and run:
+
+```bash
+wget https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh
+chmod +x raspberry-pi-setup.sh
+./raspberry-pi-setup.sh
+```
+
+Enter the auth key when prompted.
+
+### On VPS: Enable Routes
+
+```bash
+./scripts/enable-routes.sh
+```
+
+Select option 1 to enable all routes.
+
+### Verify Connectivity
+
+```bash
+# From VPS, ping Raspberry Pi
+docker exec -it barcode-central ping 100.64.0.10
+
+# Test printer access
+docker exec -it barcode-central ping 192.168.1.100
+```
+
+---
+
+## 📋 Manual Setup (Alternative)
+
+If you prefer manual configuration:
+
+### Step 1: Clone Repository
+
+```bash
+git clone https://github.com/ZenDevMaster/barcodecentral.git
+cd barcodecentral
+```
+
+### Step 2: Create Environment File
+
+```bash
+# Copy example (blocked by .rooignore, create manually)
+cat > .env << 'EOF'
+FLASK_ENV=production
+FLASK_DEBUG=0
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+LOGIN_USER=admin
+LOGIN_PASSWORD=your-secure-password
+LOG_LEVEL=INFO
+SESSION_COOKIE_SECURE=false
+SESSION_COOKIE_HTTPONLY=true
+SESSION_COOKIE_SAMESITE=Lax
+EOF
+```
+
+### Step 3: Create Directories
+
+```bash
+mkdir -p logs previews
+touch history.json printers.json
+```
+
+### Step 4: Deploy
+
+```bash
+docker compose up -d --build
 ```
 
 ---
@@ -293,6 +373,19 @@ tail -f logs/app.log
 ./scripts/restore.sh backups/backup_20240101_120000.tar.gz
 ```
 
+### Managing Headscale Routes
+
+```bash
+# List and enable routes
+./scripts/enable-routes.sh
+
+# Generate new auth key
+./scripts/generate-authkey.sh
+
+# Configure firewall
+./scripts/configure-firewall.sh
+```
+
 ---
 
 ## Troubleshooting
@@ -432,22 +525,49 @@ docker-compose logs app | grep health
 
 ### Essential Commands
 
+**Setup:**
+```bash
+# Interactive setup wizard
+./setup.sh
+
+# Configure firewall
+./scripts/configure-firewall.sh
+
+# Generate Headscale auth key
+./scripts/generate-authkey.sh
+
+# Enable subnet routes
+./scripts/enable-routes.sh
+```
+
 **Docker:**
 ```bash
 # Start
-docker-compose up -d
+docker compose up -d
 
 # Stop
-docker-compose down
+docker compose down
 
 # Restart
-docker-compose restart
+docker compose restart
 
 # Logs
-docker-compose logs -f
+docker compose logs -f
 
 # Status
-docker-compose ps
+docker compose ps
+```
+
+**Raspberry Pi:**
+```bash
+# Setup print server
+./raspberry-pi-setup.sh
+
+# Check status
+/usr/local/bin/pi-monitor.sh
+
+# View Tailscale status
+sudo tailscale status
 ```
 
 **Development:**
@@ -460,9 +580,6 @@ docker-compose ps
 
 # Backup
 ./scripts/backup.sh
-
-# Deploy
-./scripts/deploy.sh
 ```
 
 ### Essential URLs

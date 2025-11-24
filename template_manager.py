@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, Template, TemplateError, Undef
 from utils.validators import validate_zpl_content, validate_label_size, validate_label_size_with_unit, sanitize_filename
 from utils.label_size import LabelSize
 from utils.unit_converter import Unit
+from utils.type_converter import convert_variable_types
 
 logger = logging.getLogger(__name__)
 
@@ -325,8 +326,17 @@ class TemplateManager:
             # Load template using Jinja2
             template = self.jinja_env.get_template(safe_name)
             
-            # Render with variables
-            rendered = template.render(**variables)
+            # Log original variable types for debugging
+            logger.debug(f"Rendering template {safe_name} with variables: {variables}")
+            logger.debug(f"Original variable types: {[(k, type(v).__name__, v) for k, v in variables.items()]}")
+            
+            # Convert string variables to appropriate types (int, float, bool)
+            # This allows templates to use numeric comparisons and boolean logic
+            converted_variables = convert_variable_types(variables)
+            logger.debug(f"Converted variable types: {[(k, type(v).__name__, v) for k, v in converted_variables.items()]}")
+            
+            # Render with converted variables
+            rendered = template.render(**converted_variables)
             
             logger.info(f"Rendered template: {safe_name}")
             return rendered

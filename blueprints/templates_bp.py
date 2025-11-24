@@ -273,6 +273,13 @@ def update_template(filename):
         logger.info(f"[UPDATE_TEMPLATE] Received data keys: {list(data.keys())}")
         logger.info(f"[UPDATE_TEMPLATE] Has 'content': {bool(data.get('content'))}, Has 'zpl_content': {bool(data.get('zpl_content'))}")
         
+        # Get existing template to preserve the display name
+        try:
+            existing_template = template_manager.get_template(filename)
+            existing_name = existing_template.get('name', filename)
+        except FileNotFoundError:
+            return error_response(f"Template '{filename}' not found", 404)
+        
         # Extract content - support both 'content' and 'zpl_content' field names
         content = data.get('content') or data.get('zpl_content')
         if not content:
@@ -322,9 +329,9 @@ def update_template(filename):
         elif data.get('label_size') or data.get('size'):
             label_size = data.get('label_size', data.get('size', ''))
         
-        # Build metadata
+        # Build metadata - preserve existing name if not provided
         metadata = {
-            'name': data.get('name', filename),
+            'name': data.get('name', existing_name),
             'description': data.get('description', ''),
             'size': label_size,
         }
