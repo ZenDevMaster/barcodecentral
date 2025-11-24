@@ -1,0 +1,41 @@
+[Unit]
+Description=Barcode Central Label Printing Service
+Documentation=https://github.com/your-org/barcode-central
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/barcode-central
+Environment="PATH=/opt/barcode-central/venv/bin"
+Environment="FLASK_ENV=production"
+
+# Load environment variables from .env file
+EnvironmentFile=/opt/barcode-central/.env
+
+# Start the application with gunicorn
+ExecStart=/opt/barcode-central/venv/bin/gunicorn --config gunicorn.conf.py app:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/barcode-central/logs /opt/barcode-central/previews /opt/barcode-central/history.json /opt/barcode-central/printers.json
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=barcode-central
+
+[Install]
+WantedBy=multi-user.target

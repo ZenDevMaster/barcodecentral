@@ -1,0 +1,29 @@
+^XA
+^FX Template Metadata
+^FX name: Address Label 4x6
+^FX description: Standard address label without barcode for mailing
+^FX size: 4x6
+^FX variables: name, company, address1, address2, city, state, zip
+^FX created: 2024-01-15
+
+^FX --- Label Start ---
+^FX Recipient name
+^CF0,60
+^FO50,50^FD{{ name }}^FS
+
+^FX Company name (if provided)
+^CF0,45
+^FO50,120^FD{{ company }}^FS
+
+^FX Address line 1
+^CF0,40
+^FO50,180^FD{{ address1 }}^FS
+
+^FX Address line 2 (if provided)
+^FO50,230^FD{{ address2 }}^FS
+
+^FX City, State, ZIP
+^CF0,45
+^FO50,290^FD{{ city }}, {{ state }} {{ zip }}^FS
+
+^XZ

@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "units": {
+    "default_unit": "inches",
+    "display_unit": "inches",
+    "allow_mixed_units": true,
+    "conversion_precision": 1
+  },
+  "validation": {
+    "max_width_inches": 12,
+    "max_height_inches": 12,
+    "min_dimension_inches": 0.1
+  }
+}

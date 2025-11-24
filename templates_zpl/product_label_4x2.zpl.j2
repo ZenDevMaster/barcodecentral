@@ -1,0 +1,23 @@
+^XA
+^FX Template Metadata
+^FX name: Product Label 4x2
+^FX description: Simple product label with barcode for retail items
+^FX size: 4x2
+^FX variables: product_name, sku, price, barcode
+^FX created: 2024-01-15
+
+^FX --- Label Start ---
+^FX Product name at top
+^CF0,50
+^FO50,30^FD{{ product_name }}^FS
+
+^FX SKU and Price
+^CF0,30
+^FO50,90^FDSKU: {{ sku }}^FS
+^FO50,130^FDPrice: ${{ price }}^FS
+
+^FX Barcode at bottom
+^BY2,2,70
+^FO50,180^BC^FD{{ barcode }}^FS
+
+^XZ

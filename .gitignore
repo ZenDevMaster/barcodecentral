@@ -1,0 +1,218 @@
+# ============================================================================
+# Python
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# ============================================================================
+# Flask
+# ============================================================================
+instance/
+.webassets-cache
+
+# ============================================================================
+# Environment & Configuration
+# ============================================================================
+.env
+.env.local
+.env.*.local
+config.local.json
+
+# Keep example files
+!.env.example
+!.env.production.example
+
+# ============================================================================
+# Virtual Environments
+# ============================================================================
+venv/
+ENV/
+env/
+.venv/
+env.bak/
+venv.bak/
+
+# ============================================================================
+# IDE & Editors
+# ============================================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ============================================================================
+# Operating System
+# ============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================================================
+# Logs & Runtime
+# ============================================================================
+logs/*.log
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================================================
+# Application-Specific (Barcode Central)
+# ============================================================================
+# Sensitive printer configurations
+printers.json
+
+# Keep example file
+!printers.json.example
+
+# Runtime data
+history.json
+
+# Generated preview images
+previews/*.png
+previews/*.jpg
+previews/*.gif
+
+# Keep .gitkeep files
+!previews/.gitkeep
+!logs/.gitkeep
+
+# Template backups
+templates_zpl/*.zpl.j2.backup
+templates_zpl/*.bak
+
+# Temporary test files
+test_unit_system.py
+
+# ============================================================================
+# Backup & Temporary Files
+# ============================================================================
+*.bak
+*.tmp
+*.temp
+*.old
+*.orig
+backup/
+backups/
+*.tar.gz
+*.zip
+
+# ============================================================================
+# Docker (keep Docker files in repo, but ignore local overrides)
+# ============================================================================
+docker-compose.override.yml
+.dockerignore.local
+
+# ============================================================================
+# Database (if SQLite is added later)
+# ============================================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================================================
+# Node.js (if frontend dependencies are added)
+# ============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# Certificates & Keys (extra safety)
+# ============================================================================
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# ============================================================================
+# Misc
+# ============================================================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/

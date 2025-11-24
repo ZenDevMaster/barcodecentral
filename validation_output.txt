@@ -1,0 +1,13 @@
+/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+
+================================================================================
+Barcode Central - Integration Validation
+================================================================================
+
+Started: Mon Nov 24 11:11:38 +07 2025
+Working Directory: /home/user/Projects/WSL/app.barcodecentral
+
+
+--------------------------------------------------------------------------------
+Python Environment
+--------------------------------------------------------------------------------

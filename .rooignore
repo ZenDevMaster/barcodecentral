@@ -1,0 +1,150 @@
+# ============================================================================
+# .rooignore - Files/directories for Roo AI to ignore during codebase analysis
+# ============================================================================
+
+# ============================================================================
+# Python Build Artifacts & Cache
+# ============================================================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+
+# ============================================================================
+# Virtual Environments
+# ============================================================================
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# ============================================================================
+# Node Modules (if added later)
+# ============================================================================
+node_modules/
+
+# ============================================================================
+# Generated Files & Runtime Data
+# ============================================================================
+# Preview images (generated at runtime)
+previews/
+previews/*.png
+
+# Log files
+logs/
+*.log
+
+# Runtime data files
+history.json
+printers.json
+
+# ============================================================================
+# IDE & Editor Files
+# ============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================================
+# Large Static Assets (ACE Editor)
+# ============================================================================
+# ACE editor files are well-known libraries, no need to analyze
+static/ace/*.js
+static/ace/mode-*.js
+static/ace/theme-*.js
+static/ace/worker-*.js
+static/ace/ext-*.js
+static/ace/keybinding-*.js
+
+# ============================================================================
+# Test Files (optional - uncomment if you want Roo to focus on main code)
+# ============================================================================
+# tests/
+# test_*.py
+# *_test.py
+test_unit_system.py
+
+# ============================================================================
+# Docker Files (infrastructure, not application logic)
+# ============================================================================
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+
+# ============================================================================
+# Documentation (optional - uncomment if you want Roo to focus on code)
+# ============================================================================
+# Uncomment these if you want Roo to ignore documentation files
+# *.md
+# roo-docs/
+# CHANGELOG.md
+# CONTRIBUTING.md
+# DEPLOYMENT.md
+# DEPLOYMENT_SUMMARY.md
+# FEATURES.md
+# HISTORY_IMPLEMENTATION.md
+# LIMITATIONS.md
+# PREVIEW_IMPLEMENTATION.md
+# PROJECT_SUMMARY.md
+# QUICKSTART.md
+# ROADMAP.md
+
+# ============================================================================
+# Scripts (deployment/maintenance scripts)
+# ============================================================================
+scripts/backup.sh
+scripts/restore.sh
+scripts/deploy.sh
+scripts/build.sh
+
+# ============================================================================
+# Configuration Examples (keep main configs, ignore examples)
+# ============================================================================
+.env.example
+.env.production.example
+
+# ============================================================================
+# Backup & Temporary Files
+# ============================================================================
+*.bak
+*.tmp
+*.temp
+*.old
+backup/
+backups/
+*.tar.gz
+
+# ============================================================================
+# OS Files
+# ============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================================
+# Service Files
+# ============================================================================
+barcode-central.service
+nginx.conf
+gunicorn.conf.py
+
+# ============================================================================
+# License & Legal
+# ============================================================================
+LICENSE

@@ -1,0 +1,25 @@
+^XA
+^FX Template Metadata
+^FX name: Shipping Label 4x6
+^FX description: Standard 4x6 inch shipping label with barcode and address
+^FX size: 4x6
+^FX variables: order_number, customer_name, address, city, state, zip
+^FX created: 2024-01-15
+
+^FX --- Label Start ---
+^FX Order number at top
+^CF0,60
+^FO50,50^FDOrder: {{ order_number }}^FS
+
+^FX Ship To section
+^FO50,120^FDShip To:^FS
+^CF0,40
+^FO50,170^FD{{ customer_name }}^FS
+^FO50,220^FD{{ address }}^FS
+^FO50,270^FD{{ city }}, {{ state }} {{ zip }}^FS
+
+^FX Barcode at bottom
+^BY3,3,100
+^FO50,350^BC^FD{{ order_number }}^FS
+
+^XZ

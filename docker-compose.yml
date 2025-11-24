@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    container_name: barcode-central
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=${FLASK_ENV:-production}
+      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - LOGIN_USER=${LOGIN_USER}
+      - LOGIN_PASSWORD=${LOGIN_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+    volumes:
+      - ./templates_zpl:/app/templates_zpl
+      - ./history.json:/app/history.json
+      - ./printers.json:/app/printers.json
+      - ./previews:/app/previews
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - barcode-network
+
+networks:
+  barcode-network:
+    driver: bridge

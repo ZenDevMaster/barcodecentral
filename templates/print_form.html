@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+
+{% block title %}Print Label - Barcode Central{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h2">
+                <i class="bi bi-printer"></i> Print Label
+            </h1>
+            <p class="text-muted">Select a template and printer to print labels</p>
+        </div>
+    </div>
+
+    <form id="printForm">
+        <div class="row">
+            <!-- Left Column: Print Configuration -->
+            <div class="col-lg-5 mb-4">
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-gear"></i> Print Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="templateSelect" class="form-label">Template *</label>
+                            <select class="form-select" id="templateSelect" name="template_name" required>
+                                <option value="">-- Select Template --</option>
+                                {% for template in templates %}
+                                <option value="{{ template.name }}"
+                                        {% if selected_template and selected_template.name == template.name %}selected{% endif %}
+                                        data-variables="{{ template.variables|join(',') if template.variables else '' }}"
+                                        data-width="{{ template.size.split('x')[0] if template.size and 'x' in template.size else '' }}"
+                                        data-height="{{ template.size.split('x')[1] if template.size and 'x' in template.size else '' }}">
+                                    {{ template.name }} ({{ template.size.split('x')[0] if template.size and 'x' in template.size else '' }}" x {{ template.size.split('x')[1] if template.size and 'x' in template.size else '' }}")
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="printerSelect" class="form-label">Printer *</label>
+                            <select class="form-select" id="printerSelect" name="printer_name" required>
+                                <option value="">-- Select Printer --</option>
+                                {% for printer in printers %}
+                                {% if printer.enabled %}
+                                <option value="{{ printer.name }}"
+                                        data-sizes="{{ printer.supported_sizes|join(',') if printer.supported_sizes else '' }}">
+                                    {{ printer.name }} - {{ printer.location|default('Unknown Location') }}
+                                </option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                            <div id="printerWarning" class="alert alert-warning mt-2" style="display: none;">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <small id="printerWarningText"></small>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="quantity" class="form-label">Quantity *</label>
+                            <input type="number" class="form-control" id="quantity" name="quantity" 
+                                   min="1" max="100" value="1" required>
+                            <small class="form-text text-muted">Maximum: 100 labels</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Variable Fields -->
+                <div class="card" id="variablesCard" style="display: none;">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-input-cursor-text"></i> Template Variables
+                        </h5>
+                    </div>
+                    <div class="card-body" id="variableFields">
+                        <!-- Dynamic fields will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <button type="button" class="btn btn-info w-100 mb-2" id="previewBtn">
+                            <i class="bi bi-eye"></i> Preview Only
+                        </button>
+                        <button type="submit" class="btn btn-success w-100 mb-2">
+                            <i class="bi bi-printer-fill"></i> Print Labels
+                        </button>
+                        <a href="{{ url_for('web.dashboard') }}" class="btn btn-secondary w-100">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Preview -->
+            <div class="col-lg-7">
+                <div class="card sticky-top" style="top: 20px;">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-eye"></i> Live Preview
+                        </h5>
+                    </div>
+                    <div class="card-body text-center" style="min-height: 400px;">
+                        <div id="previewPlaceholder" class="text-muted py-5">
+                            <i class="bi bi-image" style="font-size: 4rem;"></i>
+                            <p class="mt-3">Select a template to see preview</p>
+                        </div>
+                        <div id="previewLoading" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Generating preview...</p>
+                        </div>
+                        <div id="previewContent"></div>
+                        <div id="previewError" class="alert alert-danger" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Success Modal -->
+<div class="modal fade" id="successModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-check-circle"></i> Print Job Submitted
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Your print job has been submitted successfully!</p>
+                <div id="printJobDetails"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="{{ url_for('web.history') }}" class="btn btn-primary">View History</a>
+                <button type="button" class="btn btn-success" id="printAnotherBtn">Print Another</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/print_form.js') }}"></script>
+
+<script>
+$(document).ready(function() {
+    let currentTemplate = null;
+    let previewDebounceTimer = null;
+
+    // Template selection handler
+    $('#templateSelect').on('change', function() {
+        const selectedOption = $(this).find('option:selected');
+        const templateName = selectedOption.val();
+        
+        if (!templateName) {
+            $('#variablesCard').hide();
+            $('#previewPlaceholder').show();
+            $('#previewContent').empty();
+            currentTemplate = null;
+            return;
+        }
+
+        const variables = selectedOption.data('variables');
+        const width = selectedOption.data('width');
+        const height = selectedOption.data('height');
+
+        currentTemplate = {
+            name: templateName,
+            variables: variables ? variables.split(',') : [],
+            width: width,
+            height: height
+        };
+
+        // Generate variable fields
+        generateVariableFields(currentTemplate.variables);
+        
+        // Check printer compatibility
+        checkPrinterCompatibility();
+        
+        // Generate initial preview
+        generatePreview();
+    });
+
+    // Printer selection handler
+    $('#printerSelect').on('change', function() {
+        checkPrinterCompatibility();
+    });
+
+    // Variable field change handler (with debounce)
+    $(document).on('input', '.variable-input', function() {
+        clearTimeout(previewDebounceTimer);
+        previewDebounceTimer = setTimeout(() => {
+            generatePreview();
+        }, 500);
+    });
+
+    // Preview button
+    $('#previewBtn').on('click', function() {
+        generatePreview();
+    });
+
+    // Form submission
+    $('#printForm').on('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = {
+            template_name: $('#templateSelect').val(),
+            printer_name: $('#printerSelect').val(),
+            quantity: parseInt($('#quantity').val()),
+            variables: {}
+        };
+
+        // Collect variable values
+        $('.variable-input').each(function() {
+            const varName = $(this).data('variable');
+            formData.variables[varName] = $(this).val();
+        });
+
+        try {
+            const response = await fetch('/api/print', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                showSuccessModal(data);
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to submit print job', 'danger');
+            }
+        } catch (error) {
+            showToast('Error submitting print job: ' + error.message, 'danger');
+        }
+    });
+
+    // Print another button
+    $('#printAnotherBtn').on('click', function() {
+        $('#successModal').modal('hide');
+        $('#printForm')[0].reset();
+        $('#variablesCard').hide();
+        $('#previewContent').empty();
+        $('#previewPlaceholder').show();
+    });
+
+    // Generate variable fields
+    function generateVariableFields(variables) {
+        const container = $('#variableFields');
+        container.empty();
+
+        if (!variables || variables.length === 0) {
+            $('#variablesCard').hide();
+            return;
+        }
+
+        $('#variablesCard').show();
+
+        variables.forEach(varName => {
+            const fieldHtml = `
+                <div class="mb-3">
+                    <label for="var_${varName}" class="form-label">${varName}</label>
+                    <input type="text" class="form-control variable-input" 
+                           id="var_${varName}" data-variable="${varName}"
+                           placeholder="Enter ${varName}">
+                </div>
+            `;
+            container.append(fieldHtml);
+        });
+    }
+
+    // Check printer compatibility
+    function checkPrinterCompatibility() {
+        if (!currentTemplate) return;
+
+        const selectedPrinter = $('#printerSelect').find('option:selected');
+        const printerSizes = selectedPrinter.data('sizes');
+        
+        if (!printerSizes) return;
+
+        const templateSize = `${currentTemplate.width}x${currentTemplate.height}`;
+        const supportedSizes = printerSizes.split(',');
+
+        if (!supportedSizes.includes(templateSize)) {
+            $('#printerWarningText').text(
+                `Warning: This printer may not support ${templateSize}" labels. Supported sizes: ${supportedSizes.join(', ')}`
+            );
+            $('#printerWarning').show();
+        } else {
+            $('#printerWarning').hide();
+        }
+    }
+
+    // Generate preview
+    async function generatePreview() {
+        if (!currentTemplate) return;
+
+        $('#previewPlaceholder').hide();
+        $('#previewLoading').show();
+        $('#previewContent').empty();
+        $('#previewError').hide();
+
+        const variables = {};
+        $('.variable-input').each(function() {
+            const varName = $(this).data('variable');
+            const value = $(this).val() || `Sample ${varName}`;
+            variables[varName] = value;
+        });
+
+        try {
+            const response = await fetch('/api/preview/template', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    template_name: currentTemplate.name,
+                    variables: variables
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.preview_url) {
+                    $('#previewContent').html(`
+                        <img src="${data.preview_url}" class="img-fluid" alt="Label Preview" 
+                             style="max-width: 100%; border: 1px solid #ddd; border-radius: 5px;">
+                    `);
+                }
+            } else {
+                const data = await response.json();
+                $('#previewError').text(data.error || 'Failed to generate preview').show();
+            }
+        } catch (error) {
+            $('#previewError').text('Error: ' + error.message).show();
+        } finally {
+            $('#previewLoading').hide();
+        }
+    }
+
+    // Show success modal
+    function showSuccessModal(data) {
+        const details = `
+            <ul class="list-unstyled">
+                <li><strong>Template:</strong> ${data.template_name || 'N/A'}</li>
+                <li><strong>Printer:</strong> ${data.printer_name || 'N/A'}</li>
+                <li><strong>Quantity:</strong> ${data.quantity || 1}</li>
+                <li><strong>Status:</strong> <span class="badge bg-success">${data.status || 'Submitted'}</span></li>
+            </ul>
+        `;
+        $('#printJobDetails').html(details);
+        $('#successModal').modal('show');
+    }
+
+    // Auto-select template if provided in URL
+    {% if selected_template %}
+    $('#templateSelect').val('{{ selected_template.name }}').trigger('change');
+    {% endif %}
+});
+</script>
+{% endblock %}

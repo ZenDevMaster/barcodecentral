@@ -1,0 +1,107 @@
+"""
+Barcode Central - ZPL Label Printing Web Application
+Main Flask application entry point
+"""
+import os
+import logging
+from datetime import timedelta
+from flask import Flask, render_template
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Configuration
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
+# Session configuration for security
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Configure logging
+log_level = logging.DEBUG if os.getenv('FLASK_DEBUG') == '1' else logging.INFO
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    """Handle 404 errors"""
+    logger.warning(f"404 error: {error}")
+    return render_template('404.html'), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors"""
+    logger.error(f"500 error: {error}")
+    return render_template('500.html'), 500
+
+
+# Blueprint registration
+# Authentication and Web UI blueprints
+from blueprints.auth_bp import auth_bp
+from blueprints.web_bp import web_bp
+
+# API blueprints
+from blueprints.templates_bp import templates_bp
+from blueprints.printers_bp import printers_bp
+from blueprints.preview_bp import preview_bp
+from blueprints.print_bp import print_bp
+from blueprints.history_bp import history_bp
+
+# Register authentication blueprint (no prefix - handles /, /login, /logout)
+app.register_blueprint(auth_bp)
+
+# Register web UI blueprint (no prefix - handles /dashboard, /templates, etc.)
+app.register_blueprint(web_bp)
+
+# Register API blueprints (with /api prefix)
+app.register_blueprint(templates_bp, url_prefix='/api/templates')
+app.register_blueprint(printers_bp, url_prefix='/api/printers')
+app.register_blueprint(preview_bp, url_prefix='/api/preview')
+app.register_blueprint(print_bp, url_prefix='/api/print')
+app.register_blueprint(history_bp, url_prefix='/api/history')
+
+
+# Health check endpoint for Docker
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint for monitoring and Docker health checks"""
+    from datetime import datetime
+    return {
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'barcode-central'
+    }, 200
+
+
+if __name__ == '__main__':
+    # Ensure required directories exist
+    os.makedirs('logs', exist_ok=True)
+    os.makedirs('previews', exist_ok=True)
+    
+    # Log startup
+    logger.info("Starting Barcode Central application")
+    logger.info(f"Environment: {os.getenv('FLASK_ENV', 'development')}")
+    logger.info(f"Debug mode: {os.getenv('FLASK_DEBUG', '0') == '1'}")
+    
+    # Run the application
+    debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
+    app.run(
+        host='0.0.0.0',
+        port=5000,
+        debug=debug_mode
+    )

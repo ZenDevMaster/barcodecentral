@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Template - Barcode Central{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h2">
+                <i class="bi bi-pencil-square"></i> Edit Template: {{ template.name }}
+            </h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('web.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('web.templates') }}">Templates</a></li>
+                    <li class="breadcrumb-item active">Edit: {{ template.name }}</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <form id="templateForm">
+        <div class="row">
+            <!-- Left Column: Metadata -->
+            <div class="col-lg-4 mb-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle"></i> Template Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="templateName" class="form-label">Template Name *</label>
+                            <input type="text" class="form-control" id="templateName" name="name" 
+                                   value="{{ template.name }}" readonly>
+                            <small class="form-text text-muted">Name cannot be changed</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" 
+                                      rows="3" placeholder="Brief description of this template">{{ template.description|default('') }}</textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="labelWidth" class="form-label">Width (inches) *</label>
+                                <input type="number" class="form-control" id="labelWidth" name="label_width" 
+                                       step="0.1" min="0.1" value="{{ template.label_width }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="labelHeight" class="form-label">Height (inches) *</label>
+                                <input type="number" class="form-control" id="labelHeight" name="label_height" 
+                                       step="0.1" min="0.1" value="{{ template.label_height }}" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="variables" class="form-label">Variables</label>
+                            <input type="text" class="form-control" id="variables" name="variables" 
+                                   value="{{ template.variables|join(', ') if template.variables else '' }}"
+                                   placeholder="e.g., product_name, barcode, price">
+                            <small class="form-text text-muted">Comma-separated list</small>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-lightbulb"></i>
+                            <strong>Tip:</strong> Variables in your ZPL should match the format: 
+                            <code>{{ '{{' }} variable_name {{ '}}' }}</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <button type="submit" class="btn btn-success w-100 mb-2">
+                            <i class="bi bi-check-circle"></i> Save Changes
+                        </button>
+                        <a href="{{ url_for('web.templates') }}" class="btn btn-secondary w-100">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Editor and Preview -->
+            <div class="col-lg-8">
+                <div class="card mb-3">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-code-square"></i> ZPL Code Editor
+                        </h5>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-outline-light" id="previewBtn">
+                                <i class="bi bi-eye"></i> Preview
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="editor" style="height: 400px; width: 100%;">{{ zpl_content }}</div>
+                    </div>
+                </div>
+
+                <!-- Preview Panel -->
+                <div class="card" id="previewPanel" style="display: none;">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-eye"></i> Preview
+                        </h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <div id="previewLoading" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Generating preview...</p>
+                        </div>
+                        <div id="previewContent"></div>
+                        <div id="previewError" class="alert alert-danger" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    #editor {
+        font-size: 14px;
+    }
+    .ace_editor {
+        border: 1px solid #ddd;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Ace Editor -->
+<script src="{{ url_for('static', filename='ace/ace.js') }}"></script>
+<script src="{{ url_for('static', filename='ace/mode-text.js') }}"></script>
+<script src="{{ url_for('static', filename='ace/theme-monokai.js') }}"></script>
+
+<script src="{{ url_for('static', filename='js/template_editor.js') }}"></script>
+
+<script>
+$(document).ready(function() {
+    const templateName = '{{ template.name }}';
+
+    // Initialize Ace Editor
+    const editor = ace.edit("editor");
+    editor.setTheme("ace/theme/monokai");
+    editor.session.setMode("ace/mode/text");
+    editor.setOptions({
+        fontSize: "14px",
+        showPrintMargin: false,
+        enableBasicAutocompletion: true,
+        enableLiveAutocompletion: false
+    });
+
+    // Preview button
+    $('#previewBtn').on('click', async function() {
+        const zplContent = editor.getValue();
+        const variables = {};
+        
+        // Parse variables from form
+        const varsInput = $('#variables').val();
+        if (varsInput) {
+            varsInput.split(',').forEach(v => {
+                const varName = v.trim();
+                if (varName) {
+                    variables[varName] = `Sample ${varName}`;
+                }
+            });
+        }
+
+        await generatePreview(zplContent, variables);
+    });
+
+    // Form submission
+    $('#templateForm').on('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = {
+            description: $('#description').val().trim(),
+            label_width: parseFloat($('#labelWidth').val()),
+            label_height: parseFloat($('#labelHeight').val()),
+            zpl_content: editor.getValue(),
+            variables: []
+        };
+
+        // Parse variables
+        const varsInput = $('#variables').val();
+        if (varsInput) {
+            formData.variables = varsInput.split(',').map(v => v.trim()).filter(v => v);
+        }
+
+        try {
+            const response = await fetch(`/api/templates/${templateName}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+
+            if (response.ok) {
+                showToast('Template updated successfully!', 'success');
+                setTimeout(() => {
+                    window.location.href = '{{ url_for("web.templates") }}';
+                }, 1000);
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to update template', 'danger');
+            }
+        } catch (error) {
+            showToast('Error updating template: ' + error.message, 'danger');
+        }
+    });
+
+    // Auto-extract variables from ZPL
+    editor.session.on('change', debounce(function() {
+        const content = editor.getValue();
+        const matches = content.match(/\{\{\s*(\w+)\s*\}\}/g);
+        if (matches) {
+            const vars = [...new Set(matches.map(m => m.replace(/\{\{\s*|\s*\}\}/g, '')))];
+            $('#variables').val(vars.join(', '));
+        }
+    }, 1000));
+
+    // Keyboard shortcut: Ctrl+S to save
+    $(document).on('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            $('#templateForm').submit();
+        }
+    });
+});
+
+// Debounce function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Generate preview
+async function generatePreview(zplContent, variables) {
+    $('#previewPanel').show();
+    $('#previewLoading').show();
+    $('#previewContent').empty();
+    $('#previewError').hide();
+
+    try {
+        const response = await fetch('/api/preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                zpl_content: zplContent,
+                variables: variables
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.preview_url) {
+                $('#previewContent').html(`
+                    <img src="${data.preview_url}" class="img-fluid" alt="Label Preview" 
+                         style="max-width: 100%; border: 1px solid #ddd;">
+                `);
+            }
+        } else {
+            const data = await response.json();
+            $('#previewError').text(data.error || 'Failed to generate preview').show();
+        }
+    } catch (error) {
+        $('#previewError').text('Error: ' + error.message).show();
+    } finally {
+        $('#previewLoading').hide();
+    }
+}
+</script>
+{% endblock %}
