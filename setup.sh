@@ -300,9 +300,9 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     echo "  • Configure routes and ACLs visually"
     echo "  • Monitor network status in real-time"
     if [ "$EXTERNAL_ACCESS" = true ]; then
-        echo "  • Access at: https://$DOMAIN/headscale-admin/"
+        echo "  • Access at: https://$DOMAIN/web/"
     else
-        echo "  • Access at: http://localhost:$HTTP_PORT/headscale-admin/"
+        echo "  • Access at: http://localhost:$HTTP_PORT/web/"
     fi
     echo ""
     read -p "Enable Headscale Web Admin UI? [Y/n]: " use_headscale_ui_choice
@@ -770,7 +770,7 @@ services:
     environment:
       - TZ=UTC
       - HS_SERVER=http://headscale:8080
-      - SCRIPT_NAME=/headscale-admin
+      - SCRIPT_NAME=/web
       - KEY=${HEADSCALE_API_KEY}
       - AUTH_TYPE=Basic
       - BASIC_AUTH_USER=${HEADSCALE_UI_USER}
@@ -842,20 +842,17 @@ if [ "$USE_TRAEFIK" = true ] && [ "$USE_HEADSCALE_UI" = true ]; then
     print_info "Adding Traefik labels for Headscale UI..."
     
     # Use sed to insert Traefik labels after the headscale-ui service label
-    # Priority is set higher than main app to ensure /headscale-admin is matched first
+    # Priority is set higher than main app to ensure /web is matched first
     sed -i '/com.barcodecentral.service=headscale-ui/a\
       # Traefik labels for Headscale UI\
       - "traefik.enable=true"\
-      - "traefik.http.routers.headscale-ui.rule=Host(`${DOMAIN}`) && PathPrefix(`/headscale-admin`)"\
+      - "traefik.http.routers.headscale-ui.rule=Host(`${DOMAIN}`) && PathPrefix(`/web`)"\
       - "traefik.http.routers.headscale-ui.entrypoints=websecure"\
       - "traefik.http.routers.headscale-ui.tls=true"\
       - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"\
       - "traefik.http.routers.headscale-ui.priority=100"\
       - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"\
-      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.prefixes=/headscale-admin"\
-      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.forceSlash=false"\
-      - "traefik.http.middlewares.headscale-ui-headers.headers.customrequestheaders.X-Script-Name=/headscale-admin"\
-      - "traefik.http.routers.headscale-ui.middlewares=headscale-ui-stripprefix,headscale-ui-headers,security-headers"' docker-compose.yml
+      - "traefik.http.routers.headscale-ui.middlewares=security-headers"' docker-compose.yml
     
     print_success "Added Traefik labels for Headscale UI"
 fi
@@ -1049,22 +1046,18 @@ NGINX_EOF
     if [ "$USE_HEADSCALE_UI" = true ]; then
         cat >> config/nginx/barcode-central.conf << NGINX_UI_EOF
     
-    # Headscale Web Admin UI
-    location /headscale-admin/ {
-        proxy_pass http://localhost:$HEADSCALE_UI_PORT/;
+    # Headscale Web Admin UI (served at /web per SvelteKit base path)
+    location /web/ {
+        proxy_pass http://localhost:$HEADSCALE_UI_PORT/web/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Script-Name /headscale-admin;
         
         # WebSocket support
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        
-        # Remove trailing slash redirect
-        proxy_redirect / /headscale-admin/;
         
         # Timeouts
         proxy_connect_timeout 60s;
@@ -1189,11 +1182,11 @@ if [ "$USE_HEADSCALE" = true ]; then
         echo ""
         echo "   c) Access Headscale UI:"
         if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
-            echo "      https://$DOMAIN/headscale-admin/"
+            echo "      https://$DOMAIN/web/"
         elif [ "$USE_TRAEFIK" = true ]; then
-            echo "      http://$DOMAIN/headscale-admin/"
+            echo "      http://$DOMAIN/web/"
         else
-            echo "      http://$DOMAIN:$HTTP_PORT/headscale-admin/"
+            echo "      http://$DOMAIN:$HTTP_PORT/web/"
         fi
         echo ""
         echo "   d) Generate pre-auth key (in UI or via CLI):"
