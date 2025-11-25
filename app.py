@@ -44,12 +44,20 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 # Session configuration for security
 # In production, require HTTPS for session cookies (ProxyFix handles X-Forwarded-Proto)
 # Set SESSION_COOKIE_SECURE=false in .env to disable if not using HTTPS
-session_secure = os.getenv('SESSION_COOKIE_SECURE')
-if session_secure is not None:
-    app.config['SESSION_COOKIE_SECURE'] = session_secure.lower() == 'true'
+session_secure_env = os.getenv('SESSION_COOKIE_SECURE')
+flask_env = os.getenv('FLASK_ENV')
+
+# Debug logging
+print(f"DEBUG: SESSION_COOKIE_SECURE env = {session_secure_env}")
+print(f"DEBUG: FLASK_ENV = {flask_env}")
+
+if session_secure_env is not None:
+    app.config['SESSION_COOKIE_SECURE'] = session_secure_env.lower() == 'true'
+    print(f"DEBUG: Setting SESSION_COOKIE_SECURE from env: {app.config['SESSION_COOKIE_SECURE']}")
 else:
     # Default: secure in production, insecure in development
-    app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+    app.config['SESSION_COOKIE_SECURE'] = flask_env == 'production'
+    print(f"DEBUG: Setting SESSION_COOKIE_SECURE from FLASK_ENV: {app.config['SESSION_COOKIE_SECURE']}")
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
