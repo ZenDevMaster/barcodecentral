@@ -215,4 +215,22 @@ yarn.lock
 .dmypy.json
 dmypy.json
 .pyre/
+
+# ============================================================================
+# Headscale & Deployment (Runtime Data)
+# ============================================================================
+# Runtime data directory (contains keys, databases, state)
+data/
+data/**/*
+
+# Headscale credentials
+config/**/.credentials
+
+# Traefik/Let's Encrypt data
+letsencrypt/
+traefik-logs/
+
+# Keep directory structure
+!data/.gitkeep
+!config/**/.gitkeep
 .pytype/

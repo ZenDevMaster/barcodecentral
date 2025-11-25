@@ -228,8 +228,64 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     read -p "Headscale port [8080]: " HEADSCALE_PORT
     HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
     
+    # NEW: Headscale UI Option
+    echo ""
+    echo "Do you want to enable Headscale Web Admin UI?"
+    echo "  • Manage users and machines via web interface"
+    echo "  • Configure routes and ACLs visually"
+    echo "  • Monitor network status in real-time"
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "  • Access at: https://$DOMAIN/headscale-admin/"
+    else
+        echo "  • Access at: http://localhost:$HTTP_PORT/headscale-admin/"
+    fi
+    echo ""
+    read -p "Enable Headscale Web Admin UI? [Y/n]: " use_headscale_ui_choice
+    
+    if [[ ! "$use_headscale_ui_choice" =~ ^[Nn]$ ]]; then
+        USE_HEADSCALE_UI=true
+        
+        # Check for existing credentials
+        CRED_FILE="config/headscale/.credentials"
+        
+        if [ -f "$CRED_FILE" ]; then
+            print_warning "Found existing Headscale UI credentials"
+            echo "Do you want to:"
+            echo "1) Keep existing credentials (recommended)"
+            echo "2) Generate new credentials (will require UI reconfiguration)"
+            read -p "Choice [1-2]: " cred_choice
+            
+            if [ "$cred_choice" = "1" ]; then
+                # Load existing credentials
+                source "$CRED_FILE"
+                HEADSCALE_UI_USER=${HEADSCALE_UI_USER:-admin}
+                HEADSCALE_UI_PASSWORD=${HEADSCALE_UI_PASSWORD}
+                print_success "Using existing credentials"
+            else
+                # Generate new credentials
+                HEADSCALE_UI_USER=${LOGIN_USER}
+                HEADSCALE_UI_PASSWORD=$(generate_password)
+                print_warning "New credentials generated"
+            fi
+        else
+            # First time setup
+            echo ""
+            echo "Generating Headscale UI credentials..."
+            HEADSCALE_UI_USER=${LOGIN_USER}
+            HEADSCALE_UI_PASSWORD=$(generate_password)
+            print_success "Credentials generated"
+        fi
+        
+        print_success "Headscale UI enabled"
+    else
+        USE_HEADSCALE_UI=false
+        print_info "Headscale UI disabled"
+    fi
+    
     print_success "Headscale enabled: $HEADSCALE_DOMAIN:$HEADSCALE_PORT"
 else
+    USE_HEADSCALE=false
+    USE_HEADSCALE_UI=false
     print_info "Headscale disabled - all printers must be on local network"
 fi
 
@@ -400,6 +456,18 @@ HEADSCALE_SERVER_URL=http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
 # TAILSCALE_AUTHKEY will be generated after first deployment
 
 EOF
+
+    # Add Headscale UI configuration if enabled
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        cat >> .env << EOF
+# Headscale UI
+HEADSCALE_UI_ENABLED=true
+HEADSCALE_UI_USER=$HEADSCALE_UI_USER
+HEADSCALE_UI_PASSWORD=$HEADSCALE_UI_PASSWORD
+# HEADSCALE_API_KEY=  # Generate with: ./scripts/generate-headscale-api-key.sh
+
+EOF
+    fi
 fi
 
 # Add Docker Compose profiles
@@ -526,17 +594,59 @@ services:
       - "41641:41641/udp"
     
     volumes:
-      - ./headscale/config:/etc/headscale
-      - ./headscale/data:/var/lib/headscale
+      - ./config/headscale:/etc/headscale:ro
+      - ./data/headscale:/var/lib/headscale
     
     networks:
       - barcode-network
+      - headscale-network
     
     healthcheck:
       test: ["CMD", "headscale", "health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Headscale Web Admin UI (Optional)
+  headscale-ui:
+    image: ghcr.io/gurucomputing/headscale-ui:latest
+    container_name: headscale-ui
+    restart: unless-stopped
+    
+    profiles:
+      - headscale
+    
+    environment:
+      - TZ=UTC
+      - HS_SERVER=http://headscale:8080
+      - SCRIPT_NAME=/headscale-admin
+      - KEY=\${HEADSCALE_API_KEY}
+      - AUTH_TYPE=Basic
+      - BASIC_AUTH_USER=\${HEADSCALE_UI_USER}
+      - BASIC_AUTH_PASS=\${HEADSCALE_UI_PASSWORD}
+    
+    expose:
+      - "3000"
+    
+    networks:
+      - barcode-network
+      - headscale-network
+    
+    depends_on:
+      - headscale
+    
+    labels:
+      - "com.barcodecentral.service=headscale-ui"
+      # Traefik labels (when Traefik is enabled)
+      - "traefik.enable=true"
+      - "traefik.http.routers.headscale-ui.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/headscale-admin\`)"
+      - "traefik.http.routers.headscale-ui.entrypoints=websecure"
+      - "traefik.http.routers.headscale-ui.tls=true"
+      - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.prefixes=/headscale-admin"
+      - "traefik.http.middlewares.headscale-ui-headers.headers.customrequestheaders.X-Script-Name=/headscale-admin"
+      - "traefik.http.routers.headscale-ui.middlewares=headscale-ui-stripprefix,headscale-ui-headers,security-headers"
 
   # Tailscale Client (Optional - for mesh network)
   tailscale:
@@ -557,7 +667,7 @@ services:
       - TS_EXTRA_ARGS=--login-server=http://headscale:8080
     
     volumes:
-      - ./tailscale/state:/var/lib/tailscale
+      - ./data/tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
     
     cap_add:
@@ -586,24 +696,21 @@ print_success "Created docker-compose.yml"
 
 # Create required directories
 print_info "Creating required directories..."
-mkdir -p logs previews
+mkdir -p logs previews config data
+mkdir -p config/headscale config/nginx config/traefik
+mkdir -p data/headscale data/letsencrypt data/tailscale
 touch history.json printers.json
 
-if [ "$USE_TRAEFIK" = true ]; then
-    mkdir -p letsencrypt traefik-logs
-fi
-
 if [ "$USE_HEADSCALE" = true ]; then
-    mkdir -p headscale/config headscale/data tailscale/state
-    
     # Create Headscale configuration
-    if [ ! -f headscale/config/config.yaml ]; then
+    if [ ! -f config/headscale/config.yaml ]; then
         print_info "Creating Headscale configuration..."
-        cat > headscale/config/config.yaml << HEADSCALE_EOF
+        cat > config/headscale/config.yaml << HEADSCALE_EOF
 server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
 
+# Keys and database in persistent data directory
 private_key_path: /var/lib/headscale/private.key
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
@@ -613,6 +720,9 @@ ip_prefixes:
 
 db_type: sqlite3
 db_path: /var/lib/headscale/db.sqlite
+
+# Unix socket in data directory
+unix_socket: /var/lib/headscale/headscale.sock
 
 dns_config:
   override_local_dns: true
@@ -634,11 +744,15 @@ log:
   level: info
   format: text
 HEADSCALE_EOF
+        print_success "Created Headscale configuration"
+    else
+        print_info "Headscale configuration already exists, skipping"
     fi
     
     # Create ACL policy
-    if [ ! -f headscale/config/acl.json ]; then
-        cat > headscale/config/acl.json << ACL_EOF
+    if [ ! -f config/headscale/acl.json ]; then
+        print_info "Creating Headscale ACL policy..."
+        cat > config/headscale/acl.json << ACL_EOF
 {
   "acls": [
     {
@@ -660,6 +774,26 @@ HEADSCALE_EOF
   }
 }
 ACL_EOF
+        print_success "Created Headscale ACL policy"
+    else
+        print_info "Headscale ACL policy already exists, skipping"
+    fi
+    
+    # Save Headscale UI credentials
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        print_info "Saving Headscale UI credentials..."
+        cat > config/headscale/.credentials << CRED_EOF
+# Headscale UI Credentials
+# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# DO NOT DELETE - Required for Headscale UI authentication
+
+HEADSCALE_UI_USER=$HEADSCALE_UI_USER
+HEADSCALE_UI_PASSWORD=$HEADSCALE_UI_PASSWORD
+# HEADSCALE_API_KEY will be added after first deployment
+# Run: ./scripts/generate-headscale-api-key.sh
+CRED_EOF
+        chmod 600 config/headscale/.credentials
+        print_success "Saved Headscale UI credentials"
     fi
 fi
 
@@ -667,12 +801,12 @@ print_success "Created all required directories"
 
 # Generate nginx.conf if not using Traefik
 if [ "$EXTERNAL_ACCESS" = true ] && [ "$USE_TRAEFIK" = false ]; then
-    print_info "Generating nginx.conf for manual reverse proxy..."
-    cat > nginx.conf << NGINX_EOF
+    print_info "Generating nginx configuration for manual reverse proxy..."
+    cat > config/nginx/barcode-central.conf << NGINX_EOF
 # Nginx configuration for Barcode Central
 # Generated by setup.sh on $(date)
 
-# Upstream application server
+# Upstream servers
 upstream barcode_central {
     server localhost:$HTTP_PORT;
 }
@@ -716,6 +850,38 @@ server {
         proxy_pass http://barcode_central;
         access_log off;
     }
+NGINX_EOF
+
+    # Add Headscale UI location if enabled
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        cat >> config/nginx/barcode-central.conf << NGINX_UI_EOF
+    
+    # Headscale Web Admin UI
+    location /headscale-admin/ {
+        proxy_pass http://localhost:3000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Script-Name /headscale-admin;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # Remove trailing slash redirect
+        proxy_redirect / /headscale-admin/;
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+NGINX_UI_EOF
+    fi
+
+    cat >> config/nginx/barcode-central.conf << NGINX_FOOTER_EOF
 }
 
 # Logging
@@ -727,8 +893,8 @@ gzip on;
 gzip_vary on;
 gzip_min_length 1024;
 gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
-NGINX_EOF
-    print_success "Created nginx.conf"
+NGINX_FOOTER_EOF
+    print_success "Created nginx configuration: config/nginx/barcode-central.conf"
 fi
 
 # Set permissions and ownership
@@ -749,8 +915,15 @@ print_success "Configuration files generated successfully!"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Your credentials:"
-echo "  Username: $LOGIN_USER"
-echo "  Password: $LOGIN_PASSWORD"
+echo "  Barcode Central:"
+echo "    Username: $LOGIN_USER"
+echo "    Password: $LOGIN_PASSWORD"
+if [ "$USE_HEADSCALE_UI" = true ]; then
+    echo ""
+    echo "  Headscale UI:"
+    echo "    Username: $HEADSCALE_UI_USER"
+    echo "    Password: $HEADSCALE_UI_PASSWORD"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 print_warning "IMPORTANT: Save these credentials securely!"
@@ -790,7 +963,7 @@ echo ""
 # Nginx configuration (if not using Traefik)
 if [ "$EXTERNAL_ACCESS" = true ] && [ "$USE_TRAEFIK" = false ]; then
     echo "3. Deploy nginx configuration:"
-    echo "   sudo cp nginx.conf /etc/nginx/sites-available/barcode-central"
+    echo "   sudo cp config/nginx/barcode-central.conf /etc/nginx/sites-available/barcode-central"
     echo "   sudo ln -s /etc/nginx/sites-available/barcode-central /etc/nginx/sites-enabled/"
     echo "   sudo nginx -t"
     echo "   sudo systemctl reload nginx"
@@ -819,17 +992,49 @@ if [ "$USE_HEADSCALE" = true ]; then
     else
         echo "5. Setup Headscale mesh network:"
     fi
-    echo "   a) Generate auth key:"
-    echo "      ./scripts/generate-authkey.sh"
+    
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        echo "   a) Generate Headscale API key for UI:"
+        echo "      ./scripts/generate-headscale-api-key.sh"
+        echo ""
+        echo "   b) Restart Headscale UI:"
+        echo "      docker compose restart headscale-ui"
+        echo ""
+        echo "   c) Access Headscale UI:"
+        if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
+            echo "      https://$DOMAIN/headscale-admin/"
+        elif [ "$USE_TRAEFIK" = true ]; then
+            echo "      http://$DOMAIN/headscale-admin/"
+        else
+            echo "      http://$DOMAIN:$HTTP_PORT/headscale-admin/"
+        fi
+        echo ""
+        echo "   d) Generate pre-auth key (in UI or via CLI):"
+        echo "      ./scripts/generate-authkey.sh"
+    else
+        echo "   a) Generate auth key:"
+        echo "      ./scripts/generate-authkey.sh"
+    fi
     echo ""
-    echo "   b) Setup Raspberry Pi print servers at each location:"
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        echo "   e) Setup Raspberry Pi print servers at each location:"
+    else
+        echo "   b) Setup Raspberry Pi print servers at each location:"
+    fi
     echo "      On each Raspberry Pi, run:"
     echo "      curl -sSL https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh | bash"
     echo ""
-    echo "   c) Enable subnet routes:"
-    echo "      ./scripts/enable-routes.sh"
-    echo ""
-    echo "   d) Verify connectivity:"
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        echo "   f) Enable subnet routes (in UI or via CLI):"
+        echo "      ./scripts/enable-routes.sh"
+        echo ""
+        echo "   g) Verify connectivity:"
+    else
+        echo "   c) Enable subnet routes:"
+        echo "      ./scripts/enable-routes.sh"
+        echo ""
+        echo "   d) Verify connectivity:"
+    fi
     echo "      docker exec -it barcode-central ping <raspberry-pi-tailscale-ip>"
     echo "      docker exec -it barcode-central ping <printer-ip>"
     echo ""

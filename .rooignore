@@ -82,10 +82,10 @@ test_unit_system.py
 # ============================================================================
 # Docker Files (infrastructure, not application logic)
 # ============================================================================
-Dockerfile
-docker-compose.yml
-docker-compose.override.yml
-.dockerignore
+#Dockerfile
+#docker-compose.yml
+#docker-compose.override.yml
+#.dockerignore
 
 # ============================================================================
 # Documentation (optional - uncomment if you want Roo to focus on code)
