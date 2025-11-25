@@ -725,7 +725,7 @@ services:
 
   # Headscale Coordination Server (Optional)
   headscale:
-    image: headscale/headscale:0.22
+    image: headscale/headscale:v0.27.1
     container_name: headscale
     restart: unless-stopped
     
