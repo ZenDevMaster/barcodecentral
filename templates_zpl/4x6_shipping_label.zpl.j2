@@ -1,0 +1,53 @@
+^XA
+^FX Template Metadata
+^FX name: 4x6 Shipping Label
+^FX description: 
+^FX size: 4.0x6.0
+^FX size_unit: inches
+^FX size_width: 4.0
+^FX size_height: 6.0
+^FX modified: 2025-11-25T01:06:26.916945Z
+
+
+^PW609
+^LH0,0
+^FS
+
+^CF0,30
+^FO30,30^FDFROM:^FS
+^CF0,28
+^FO30,70^FD{{ from_name }}^FS
+^FO30,110^FD{{ from_address1 }}^FS
+^FO30,150^FD{{ from_address2 }}^FS
+^FO30,190^FD{{ from_city }}, {{ from_province }} {{ from_postcode }}^FS
+^FO30,230^FD{{ from_phone }}^FS
+
+^FO20,270^GB560,3,3^FS
+
+^CF0,30
+^FO30,300^FDTO:^FS
+^CF0,32
+^FO30,340^FD{{ to_name }}^FS
+^FO30,380^FD{{ to_address1 }}^FS
+^FO30,420^FD{{ to_address2 }}^FS
+^FO30,460^FD{{ to_city }}, {{ to_province }} {{ to_postcode }}^FS
+^FO30,500^FD{{ to_phone }}^FS
+
+^FO20,540^GB560,3,3^FS
+
+^CF0,50
+^FO30,560^FDOrder Reference:^FS
+^CF0,60
+^FO30,610^FD{{ order_reference }}^FS
+
+^BY3,2,120
+^FO30,690^BCN,120,Y,N,N
+^FD{{ order_reference }}^FS
+
+^FO400,560^GB200,200,3^FS
+^CF0,40
+^FO420,600^FD{{ service_code }}^FS
+^CF0,30
+^FO420,650^FD{{ service_name }}^FS
+
+^XZ

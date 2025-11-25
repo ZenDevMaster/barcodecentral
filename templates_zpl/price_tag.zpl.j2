@@ -1,0 +1,62 @@
+^XA
+^FX Template Metadata
+^FX name: Price Tag
+^FX description: 
+^FX size: 2.4x1.2
+^FX size_unit: inches
+^FX size_width: 2.4
+^FX size_height: 1.2
+^FX variables: PRICE, BARCODE_DATA, SKU, DESC
+^FX created: 
+
+
+^PW472
+^LL236
+
+^CI28
+
+^FX -----------------------------------------------
+^FX Small Zendrian branding (top right)
+^FO350,5
+^AAN,20,10
+^FDZendrian^FS
+
+
+^FX -----------------------------------------------
+^FX PRICE in Thai Baht (large, prominent)
+^FO10,10
+^AAN,50,30
+^FD฿{{PRICE}}^FS
+
+
+^FX -----------------------------------------------
+^FX BARCODE (smaller, centered)
+^BY1,2,30
+^FO180,80
+^BCN,50,N,N,N
+^FD{{BARCODE_DATA}}^FS
+
+
+^FX -----------------------------------------------
+^FX SKU (left side, below barcode)
+^FO10,140
+^AAN,18,10
+^FD{{SKU}}^FS
+
+
+^FX -----------------------------------------------
+^FX DESCRIPTION (below SKU)
+^FO10,165
+^FB450,2,,L
+^AAN,16,8
+^FD{{DESC}}^FS
+
+
+^FX -----------------------------------------------
+^FX Optional: Unit indicator
+^FO10,200
+^AAN,14,8
+^FD฿/{{UNIT|default('ea')}}^FS
+
+
+^XZ

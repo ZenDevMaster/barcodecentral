@@ -665,11 +665,15 @@ fi
 
 print_success "Created all required directories"
 
-# Set permissions
+# Set permissions and ownership
+# The Docker container runs as appuser (UID 1000), so we need to ensure
+# the mounted directories are writable by this user
 chmod 755 logs previews
+chown -R 1000:1000 logs previews 2>/dev/null || true
 chmod 644 history.json printers.json 2>/dev/null || true
+chown 1000:1000 history.json printers.json 2>/dev/null || true
 
-print_success "Set file permissions"
+print_success "Set file permissions and ownership"
 
 # Final instructions
 clear
