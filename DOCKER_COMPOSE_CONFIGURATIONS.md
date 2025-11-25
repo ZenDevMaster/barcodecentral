@@ -251,10 +251,11 @@ services:
       - TZ=UTC
     
     healthcheck:
-      test: ["CMD", "headscale", "health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
   # Barcode Central Application with Tailscale
   app:
@@ -349,18 +350,19 @@ ip_prefixes:
 db_type: sqlite3
 db_path: /var/lib/headscale/db.sqlite
 
-# DNS configuration
-dns_config:
-  override_local_dns: true
-  nameservers:
-    - 1.1.1.1
-    - 8.8.8.8
-  domains: []
+# DNS configuration (v0.27.1+ format)
+dns:
   magic_dns: true
   base_domain: headscale.local
+  override_local_dns: true
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
 
-# ACL policy file
-acl_policy_path: /etc/headscale/acl.json
+# ACL policy (v0.27.1+ format)
+policy:
+  path: /etc/headscale/acl.json
 
 # DERP (relay) configuration
 derp:

@@ -275,15 +275,19 @@ ip_prefixes:
 db_type: sqlite3
 db_path: /var/lib/headscale/db.sqlite
 
-dns_config:
-  override_local_dns: true
-  nameservers:
-    - 1.1.1.1
-    - 8.8.8.8
+# DNS configuration (v0.27.1+ format)
+dns:
   magic_dns: true
   base_domain: headscale.local
+  override_local_dns: true
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
 
-acl_policy_path: /etc/headscale/acl.json
+# ACL policy (v0.27.1+ format)
+policy:
+  path: /etc/headscale/acl.json
 
 derp:
   server:
