@@ -63,11 +63,34 @@ generate_password() {
     head -c 20 /dev/urandom | base64 | tr -d '/+=' | cut -c1-20
 }
 
+load_existing_config() {
+    if [ -f .env ]; then
+        print_info "Detected existing .env configuration"
+        
+        # Parse existing values from .env file
+        EXISTING_SECRET_KEY=$(grep "^SECRET_KEY=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_LOGIN_USER=$(grep "^LOGIN_USER=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_LOGIN_PASSWORD=$(grep "^LOGIN_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HTTP_PORT=$(grep "^HTTP_PORT=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_DOMAIN=$(grep "^DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_ACME_EMAIL=$(grep "^ACME_EMAIL=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HEADSCALE_DOMAIN=$(grep "^HEADSCALE_DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HEADSCALE_PORT=$(grep "^HEADSCALE_PORT=" .env 2>/dev/null | cut -d'=' -f2)
+        
+        return 0
+    fi
+    return 1
+}
+
 # Main setup wizard
 clear
 print_header "Welcome to Barcode Central Setup!"
 echo "This wizard will configure your deployment."
 echo ""
+
+# Load existing configuration if available
+load_existing_config && echo ""
+
 echo "Press Enter to continue..."
 read
 
@@ -116,7 +139,15 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
     echo "Enter your fully qualified domain name (FQDN)."
     echo "Example: print.example.com"
     echo ""
-    read -p "Domain (FQDN): " DOMAIN
+    
+    # Show existing domain if available
+    if [ -n "$EXISTING_DOMAIN" ]; then
+        print_info "Current domain: $EXISTING_DOMAIN"
+        read -p "Domain (FQDN) [$EXISTING_DOMAIN]: " DOMAIN
+        DOMAIN=${DOMAIN:-$EXISTING_DOMAIN}
+    else
+        read -p "Domain (FQDN): " DOMAIN
+    fi
     
     while [ -z "$DOMAIN" ]; do
         print_error "Domain cannot be empty for external access"
@@ -162,7 +193,14 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
             USE_SSL=true
             
             echo ""
-            read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
+            # Show existing email if available
+            if [ -n "$EXISTING_ACME_EMAIL" ]; then
+                print_info "Current email: $EXISTING_ACME_EMAIL"
+                read -p "Email for Let's Encrypt notifications [$EXISTING_ACME_EMAIL]: " ACME_EMAIL
+                ACME_EMAIL=${ACME_EMAIL:-$EXISTING_ACME_EMAIL}
+            else
+                read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
+            fi
             
             while [ -z "$ACME_EMAIL" ]; do
                 print_error "Email cannot be empty"
@@ -207,16 +245,36 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     echo ""
     if [ "$EXTERNAL_ACCESS" = true ]; then
         echo "Headscale needs a domain name."
-        read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
+        
+        # Show existing Headscale domain if available
+        if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+            print_info "Current Headscale domain: $EXISTING_HEADSCALE_DOMAIN"
+            read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
+        else
+            read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
+        fi
         
         if [[ "$same_domain" =~ ^[Nn]$ ]]; then
-            read -p "Enter Headscale domain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+            if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+                read -p "Enter Headscale domain [$EXISTING_HEADSCALE_DOMAIN]: " HEADSCALE_DOMAIN
+                HEADSCALE_DOMAIN=${HEADSCALE_DOMAIN:-$EXISTING_HEADSCALE_DOMAIN}
+            else
+                read -p "Enter Headscale domain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+            fi
         else
             HEADSCALE_DOMAIN="$DOMAIN"
         fi
     else
         echo "Headscale needs to be accessible from remote locations."
-        read -p "Enter Headscale domain or IP (e.g., headscale.example.com or 1.2.3.4): " HEADSCALE_DOMAIN
+        
+        # Show existing Headscale domain if available
+        if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+            print_info "Current Headscale domain/IP: $EXISTING_HEADSCALE_DOMAIN"
+            read -p "Enter Headscale domain or IP [$EXISTING_HEADSCALE_DOMAIN]: " HEADSCALE_DOMAIN
+            HEADSCALE_DOMAIN=${HEADSCALE_DOMAIN:-$EXISTING_HEADSCALE_DOMAIN}
+        else
+            read -p "Enter Headscale domain or IP (e.g., headscale.example.com or 1.2.3.4): " HEADSCALE_DOMAIN
+        fi
         
         while [ -z "$HEADSCALE_DOMAIN" ]; do
             print_error "Headscale domain/IP cannot be empty"
@@ -225,8 +283,14 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     fi
     
     echo ""
-    read -p "Headscale port [8080]: " HEADSCALE_PORT
-    HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
+    # Show existing Headscale port if available
+    if [ -n "$EXISTING_HEADSCALE_PORT" ]; then
+        read -p "Headscale port [$EXISTING_HEADSCALE_PORT]: " HEADSCALE_PORT
+        HEADSCALE_PORT=${HEADSCALE_PORT:-$EXISTING_HEADSCALE_PORT}
+    else
+        read -p "Headscale port [8080]: " HEADSCALE_PORT
+        HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
+    fi
     
     # NEW: Headscale UI Option
     echo ""
@@ -297,35 +361,92 @@ clear
 print_header "[5/7] Application Credentials"
 echo "Configure admin access for Barcode Central."
 echo ""
-read -p "Admin username [admin]: " LOGIN_USER
-LOGIN_USER=${LOGIN_USER:-admin}
 
-echo ""
-echo "Generate secure password automatically? (recommended)"
-read -p "Auto-generate password? [Y/n]: " auto_pass
-
-if [[ "$auto_pass" =~ ^[Nn]$ ]]; then
-    read -sp "Enter admin password: " LOGIN_PASSWORD
-    echo ""
-    read -sp "Confirm password: " LOGIN_PASSWORD_CONFIRM
+# Check for existing credentials
+if [ -n "$EXISTING_LOGIN_USER" ] && [ -n "$EXISTING_LOGIN_PASSWORD" ]; then
+    print_info "Found existing credentials"
     echo ""
     
-    while [ "$LOGIN_PASSWORD" != "$LOGIN_PASSWORD_CONFIRM" ] || [ -z "$LOGIN_PASSWORD" ]; do
-        print_error "Passwords don't match or are empty"
+    # Username
+    read -p "Admin username [$EXISTING_LOGIN_USER]: " LOGIN_USER
+    LOGIN_USER=${LOGIN_USER:-$EXISTING_LOGIN_USER}
+    
+    echo ""
+    # Password - offer to keep existing
+    echo "Password options:"
+    echo "1) Keep existing password (recommended)"
+    echo "2) Generate new secure password"
+    echo "3) Enter custom password"
+    read -p "Choice [1-3]: " pass_choice
+    
+    case $pass_choice in
+        1)
+            LOGIN_PASSWORD="$EXISTING_LOGIN_PASSWORD"
+            print_success "Keeping existing password"
+            ;;
+        2)
+            LOGIN_PASSWORD=$(generate_password)
+            print_success "Generated new secure password"
+            ;;
+        3)
+            echo ""
+            read -sp "Enter admin password: " LOGIN_PASSWORD
+            echo ""
+            read -sp "Confirm password: " LOGIN_PASSWORD_CONFIRM
+            echo ""
+            
+            while [ "$LOGIN_PASSWORD" != "$LOGIN_PASSWORD_CONFIRM" ] || [ -z "$LOGIN_PASSWORD" ]; do
+                print_error "Passwords don't match or are empty"
+                read -sp "Enter admin password: " LOGIN_PASSWORD
+                echo ""
+                read -sp "Confirm password: " LOGIN_PASSWORD_CONFIRM
+                echo ""
+            done
+            print_success "Custom password set"
+            ;;
+        *)
+            LOGIN_PASSWORD="$EXISTING_LOGIN_PASSWORD"
+            print_info "Keeping existing password (invalid choice)"
+            ;;
+    esac
+else
+    # No existing credentials - first time setup
+    read -p "Admin username [admin]: " LOGIN_USER
+    LOGIN_USER=${LOGIN_USER:-admin}
+    
+    echo ""
+    echo "Generate secure password automatically? (recommended)"
+    read -p "Auto-generate password? [Y/n]: " auto_pass
+    
+    if [[ "$auto_pass" =~ ^[Nn]$ ]]; then
         read -sp "Enter admin password: " LOGIN_PASSWORD
         echo ""
         read -sp "Confirm password: " LOGIN_PASSWORD_CONFIRM
         echo ""
-    done
-else
-    LOGIN_PASSWORD=$(generate_password)
-    print_success "Generated secure password"
+        
+        while [ "$LOGIN_PASSWORD" != "$LOGIN_PASSWORD_CONFIRM" ] || [ -z "$LOGIN_PASSWORD" ]; do
+            print_error "Passwords don't match or are empty"
+            read -sp "Enter admin password: " LOGIN_PASSWORD
+            echo ""
+            read -sp "Confirm password: " LOGIN_PASSWORD_CONFIRM
+            echo ""
+        done
+    else
+        LOGIN_PASSWORD=$(generate_password)
+        print_success "Generated secure password"
+    fi
 fi
 
 echo ""
-print_info "Generating secret key..."
-SECRET_KEY=$(generate_secret)
-print_success "Secret key generated"
+# Secret key - always preserve if exists to maintain sessions
+if [ -n "$EXISTING_SECRET_KEY" ]; then
+    SECRET_KEY="$EXISTING_SECRET_KEY"
+    print_success "Using existing secret key (preserves active sessions)"
+else
+    print_info "Generating secret key..."
+    SECRET_KEY=$(generate_secret)
+    print_success "Secret key generated"
+fi
 
 echo ""
 sleep 1
@@ -337,8 +458,16 @@ print_header "[6/7] Port Configuration"
 if [ "$USE_TRAEFIK" = false ]; then
     echo "Configure the HTTP port for the application."
     echo ""
-    read -p "HTTP port [5000]: " HTTP_PORT
-    HTTP_PORT=${HTTP_PORT:-5000}
+    
+    # Show existing port if available
+    if [ -n "$EXISTING_HTTP_PORT" ]; then
+        read -p "HTTP port [$EXISTING_HTTP_PORT]: " HTTP_PORT
+        HTTP_PORT=${HTTP_PORT:-$EXISTING_HTTP_PORT}
+    else
+        read -p "HTTP port [5000]: " HTTP_PORT
+        HTTP_PORT=${HTTP_PORT:-5000}
+    fi
+    
     print_success "Application will be accessible on port $HTTP_PORT"
 else
     print_info "Traefik will handle ports 80 (HTTP) and 443 (HTTPS)"

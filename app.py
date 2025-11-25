@@ -47,20 +47,25 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 session_secure_env = os.getenv('SESSION_COOKIE_SECURE')
 flask_env = os.getenv('FLASK_ENV')
 
-# Debug logging
-print(f"DEBUG: SESSION_COOKIE_SECURE env = {session_secure_env}")
-print(f"DEBUG: FLASK_ENV = {flask_env}")
-
 if session_secure_env is not None:
     app.config['SESSION_COOKIE_SECURE'] = session_secure_env.lower() == 'true'
-    print(f"DEBUG: Setting SESSION_COOKIE_SECURE from env: {app.config['SESSION_COOKIE_SECURE']}")
 else:
     # Default: secure in production, insecure in development
     app.config['SESSION_COOKIE_SECURE'] = flask_env == 'production'
-    print(f"DEBUG: Setting SESSION_COOKIE_SECURE from FLASK_ENV: {app.config['SESSION_COOKIE_SECURE']}")
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Warn if running in production without HTTPS
+if flask_env == 'production' and not app.config['SESSION_COOKIE_SECURE']:
+    import warnings
+    warnings.warn(
+        "Running in production mode without HTTPS! "
+        "Session cookies are not secure. "
+        "Please enable SSL/HTTPS or set FLASK_ENV=development for testing.",
+        RuntimeWarning,
+        stacklevel=2
+    )
 
 # Configure logging
 log_level = logging.DEBUG if os.getenv('FLASK_DEBUG') == '1' else logging.INFO
