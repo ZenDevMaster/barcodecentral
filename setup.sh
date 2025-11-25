@@ -620,10 +620,10 @@ services:
       - TZ=UTC
       - HS_SERVER=http://headscale:8080
       - SCRIPT_NAME=/headscale-admin
-      - KEY=\${HEADSCALE_API_KEY}
+      - KEY=${HEADSCALE_API_KEY}
       - AUTH_TYPE=Basic
-      - BASIC_AUTH_USER=\${HEADSCALE_UI_USER}
-      - BASIC_AUTH_PASS=\${HEADSCALE_UI_PASSWORD}
+      - BASIC_AUTH_USER=${HEADSCALE_UI_USER}
+      - BASIC_AUTH_PASS=${HEADSCALE_UI_PASSWORD}
     
     expose:
       - "3000"
@@ -887,12 +887,6 @@ NGINX_UI_EOF
 # Logging
 access_log /var/log/nginx/barcode-central-access.log;
 error_log /var/log/nginx/barcode-central-error.log;
-
-# Gzip compression
-gzip on;
-gzip_vary on;
-gzip_min_length 1024;
-gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
 NGINX_FOOTER_EOF
     print_success "Created nginx configuration: config/nginx/barcode-central.conf"
 fi
