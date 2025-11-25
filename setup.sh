@@ -637,16 +637,6 @@ services:
     
     labels:
       - "com.barcodecentral.service=headscale-ui"
-      # Traefik labels (when Traefik is enabled)
-      - "traefik.enable=true"
-      - "traefik.http.routers.headscale-ui.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/headscale-admin\`)"
-      - "traefik.http.routers.headscale-ui.entrypoints=websecure"
-      - "traefik.http.routers.headscale-ui.tls=true"
-      - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"
-      - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"
-      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.prefixes=/headscale-admin"
-      - "traefik.http.middlewares.headscale-ui-headers.headers.customrequestheaders.X-Script-Name=/headscale-admin"
-      - "traefik.http.routers.headscale-ui.middlewares=headscale-ui-stripprefix,headscale-ui-headers,security-headers"
 
   # Tailscale Client (Optional - for mesh network)
   tailscale:
@@ -693,6 +683,26 @@ networks:
 COMPOSE_EOF
 
 print_success "Created docker-compose.yml"
+
+# Add Traefik labels to headscale-ui if both Traefik and Headscale UI are enabled
+if [ "$USE_TRAEFIK" = true ] && [ "$USE_HEADSCALE_UI" = true ]; then
+    print_info "Adding Traefik labels for Headscale UI..."
+    
+    # Use sed to insert Traefik labels after the headscale-ui service label
+    sed -i '/com.barcodecentral.service=headscale-ui/a\
+      # Traefik labels\
+      - "traefik.enable=true"\
+      - "traefik.http.routers.headscale-ui.rule=Host(`${DOMAIN}`) && PathPrefix(`/headscale-admin`)"\
+      - "traefik.http.routers.headscale-ui.entrypoints=websecure"\
+      - "traefik.http.routers.headscale-ui.tls=true"\
+      - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"\
+      - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"\
+      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.prefixes=/headscale-admin"\
+      - "traefik.http.middlewares.headscale-ui-headers.headers.customrequestheaders.X-Script-Name=/headscale-admin"\
+      - "traefik.http.routers.headscale-ui.middlewares=headscale-ui-stripprefix,headscale-ui-headers,security-headers"' docker-compose.yml
+    
+    print_success "Added Traefik labels for Headscale UI"
+fi
 
 # Create required directories
 print_info "Creating required directories..."
@@ -836,13 +846,6 @@ server {
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
-    }
-    
-    # Static files (optional - serve directly from nginx)
-    location /static {
-        alias /app/static;
-        expires 30d;
-        add_header Cache-Control "public, immutable";
     }
     
     # Health check endpoint
