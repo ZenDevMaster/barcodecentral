@@ -80,8 +80,8 @@
                            class="btn btn-sm btn-primary" title="Edit">
                             <i class="bi bi-pencil"></i> Edit
                         </a>
-                        <button class="btn btn-sm btn-danger delete-template" 
-                                data-name="{{ template.name }}" title="Delete">
+                        <button class="btn btn-sm btn-danger delete-template"
+                                data-filename="{{ template.filename }}" title="Delete">
                             <i class="bi bi-trash"></i> Delete
                         </button>
                     </div>
@@ -151,7 +151,7 @@ $(document).ready(function() {
     let templateToDelete = '';
     
     $('.delete-template').on('click', function() {
-        templateToDelete = $(this).data('name');
+        templateToDelete = $(this).data('filename');
         $('#deleteTemplateName').text(templateToDelete);
         $('#deleteModal').modal('show');
     });
