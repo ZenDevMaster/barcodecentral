@@ -76,6 +76,7 @@ load_existing_config() {
         EXISTING_ACME_EMAIL=$(grep "^ACME_EMAIL=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_HEADSCALE_DOMAIN=$(grep "^HEADSCALE_DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_HEADSCALE_PORT=$(grep "^HEADSCALE_PORT=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HEADSCALE_UI_PORT=$(grep "^HEADSCALE_UI_PORT=" .env 2>/dev/null | cut -d'=' -f2)
         
         return 0
     fi
@@ -309,6 +310,19 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     if [[ ! "$use_headscale_ui_choice" =~ ^[Nn]$ ]]; then
         USE_HEADSCALE_UI=true
         
+        # Configure Headscale UI port
+        echo ""
+        echo "Configure Headscale UI port (default: 3000)"
+        echo "Change this if port 3000 is already in use on your system."
+        
+        if [ -n "$EXISTING_HEADSCALE_UI_PORT" ]; then
+            read -p "Headscale UI port [$EXISTING_HEADSCALE_UI_PORT]: " HEADSCALE_UI_PORT
+            HEADSCALE_UI_PORT=${HEADSCALE_UI_PORT:-$EXISTING_HEADSCALE_UI_PORT}
+        else
+            read -p "Headscale UI port [3000]: " HEADSCALE_UI_PORT
+            HEADSCALE_UI_PORT=${HEADSCALE_UI_PORT:-3000}
+        fi
+        
         # Check for existing credentials
         CRED_FILE="config/headscale/.credentials"
         
@@ -340,7 +354,7 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
             print_success "Credentials generated"
         fi
         
-        print_success "Headscale UI enabled"
+        print_success "Headscale UI enabled on port $HEADSCALE_UI_PORT"
     else
         USE_HEADSCALE_UI=false
         print_info "Headscale UI disabled"
@@ -592,6 +606,7 @@ EOF
         cat >> .env << EOF
 # Headscale UI
 HEADSCALE_UI_ENABLED=true
+HEADSCALE_UI_PORT=$HEADSCALE_UI_PORT
 HEADSCALE_UI_USER=$HEADSCALE_UI_USER
 HEADSCALE_UI_PASSWORD=$HEADSCALE_UI_PASSWORD
 # HEADSCALE_API_KEY=  # Generate with: ./scripts/generate-headscale-api-key.sh
@@ -758,7 +773,7 @@ services:
     # Expose port for external nginx access (when not using Traefik)
     # Traefik can access via Docker network, but external nginx needs host port
     ports:
-      - "3000:3000"
+      - "${HEADSCALE_UI_PORT:-3000}:3000"
     
     networks:
       - barcode-network
@@ -996,7 +1011,7 @@ NGINX_EOF
     
     # Headscale Web Admin UI
     location /headscale-admin/ {
-        proxy_pass http://localhost:3000/;
+        proxy_pass http://localhost:$HEADSCALE_UI_PORT/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

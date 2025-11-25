@@ -53,10 +53,29 @@ fi
 
 # Generate new API key
 echo "Generating new API key..."
+
+# Try multiple methods to extract the API key (different headscale versions format differently)
 API_KEY=$(docker exec headscale headscale apikeys create --expiration 365d 2>&1 | grep -oP 'Key: \K.*' || echo "")
+
+# If that didn't work, try alternative extraction methods
+if [ -z "$API_KEY" ]; then
+    # Method 2: Look for the key pattern directly (hs_...)
+    API_KEY=$(docker exec headscale headscale apikeys create --expiration 365d 2>&1 | grep -oP 'hs_[a-zA-Z0-9]+' | head -1 || echo "")
+fi
+
+if [ -z "$API_KEY" ]; then
+    # Method 3: Try without expiration flag (older versions)
+    API_KEY=$(docker exec headscale headscale apikeys create 2>&1 | grep -oP 'hs_[a-zA-Z0-9]+' | head -1 || echo "")
+fi
 
 if [ -z "$API_KEY" ]; then
     echo "Error: Failed to generate API key"
+    echo ""
+    echo "Try manually:"
+    echo "  docker exec headscale headscale apikeys create"
+    echo ""
+    echo "Then add the key to .env:"
+    echo "  HEADSCALE_API_KEY=hs_your_key_here"
     exit 1
 fi
 

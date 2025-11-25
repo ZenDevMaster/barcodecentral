@@ -21,6 +21,7 @@ When you re-run `setup.sh`, it automatically detects and offers to preserve:
 ### Detected for Headscale
 - **HEADSCALE_DOMAIN** - Headscale server domain/IP
 - **HEADSCALE_PORT** - Headscale API port
+- **HEADSCALE_UI_PORT** - Headscale UI host port (default: 3000)
 - **HEADSCALE_UI_USER** - Headscale UI username (from config/headscale/.credentials)
 - **HEADSCALE_UI_PASSWORD** - Headscale UI password (from config/headscale/.credentials)
 
@@ -65,6 +66,10 @@ Email for Let's Encrypt notifications [admin@example.com]: _
 Enter Headscale domain or IP [headscale.example.com]: _
 
 Headscale port [8080]: _
+
+Configure Headscale UI port (default: 3000)
+Change this if port 3000 is already in use on your system.
+Headscale UI port [3000]: _
 ```
 
 #### Application Credentials (Step 5)
@@ -114,6 +119,7 @@ HTTP port [5000]: _
 - **LOGIN_PASSWORD** - Change if you suspect it's compromised
 - **DOMAIN** - Change if migrating to a new domain
 - **HTTP_PORT** - Change if you have port conflicts
+- **HEADSCALE_UI_PORT** - Change if port 3000 is already in use (e.g., by another service)
 - **ACME_EMAIL** - Change if you want notifications at a different address
 
 ### Security Considerations
@@ -144,11 +150,12 @@ HTTP port [5000]: _
 # - Step 5: Choose option 2 (generate new password) or 3 (custom password)
 ```
 
-### Scenario 3: Changing Port
+### Scenario 3: Changing Ports
 ```bash
 ./setup.sh
 # Keep all settings the same except:
-# - Step 6: Enter new port number
+# - Step 4: Enter new Headscale UI port (if using Headscale)
+# - Step 6: Enter new HTTP port
 ```
 
 ### Scenario 4: Adding Headscale to Existing Setup
