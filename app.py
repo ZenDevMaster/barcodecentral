@@ -95,9 +95,23 @@ def favicon():
 @app.errorhandler(404)
 def not_found_error(error):
     """Handle 404 errors"""
+    from flask import request
+    
+    # Log the request path for debugging
+    request_path = request.path
+    logger.info(f"404 handler called for path: {request_path}")
+    
     # Don't log favicon 404s as they're expected
     if 'favicon.ico' not in str(error):
         logger.warning(f"404 error: {error}")
+    
+    # IMPORTANT: /headscale-admin should be handled by reverse proxy (Traefik/nginx)
+    # If we're seeing this in Flask, it means the reverse proxy isn't configured correctly
+    if request_path.startswith('/headscale-admin'):
+        logger.error(f"Flask received /headscale-admin request - reverse proxy misconfiguration!")
+        logger.error(f"Full request URL: {request.url}")
+        logger.error(f"Headers: {dict(request.headers)}")
+    
     return render_template('404.html'), 404
 
 

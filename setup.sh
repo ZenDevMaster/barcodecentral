@@ -755,8 +755,10 @@ services:
       - BASIC_AUTH_USER=${HEADSCALE_UI_USER}
       - BASIC_AUTH_PASS=${HEADSCALE_UI_PASSWORD}
     
-    expose:
-      - "3000"
+    # Expose port for external nginx access (when not using Traefik)
+    # Traefik can access via Docker network, but external nginx needs host port
+    ports:
+      - "3000:3000"
     
     networks:
       - barcode-network
@@ -819,15 +821,18 @@ if [ "$USE_TRAEFIK" = true ] && [ "$USE_HEADSCALE_UI" = true ]; then
     print_info "Adding Traefik labels for Headscale UI..."
     
     # Use sed to insert Traefik labels after the headscale-ui service label
+    # Priority is set higher than main app to ensure /headscale-admin is matched first
     sed -i '/com.barcodecentral.service=headscale-ui/a\
-      # Traefik labels\
+      # Traefik labels for Headscale UI\
       - "traefik.enable=true"\
       - "traefik.http.routers.headscale-ui.rule=Host(`${DOMAIN}`) && PathPrefix(`/headscale-admin`)"\
       - "traefik.http.routers.headscale-ui.entrypoints=websecure"\
       - "traefik.http.routers.headscale-ui.tls=true"\
       - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"\
+      - "traefik.http.routers.headscale-ui.priority=100"\
       - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"\
       - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.prefixes=/headscale-admin"\
+      - "traefik.http.middlewares.headscale-ui-stripprefix.stripprefix.forceSlash=false"\
       - "traefik.http.middlewares.headscale-ui-headers.headers.customrequestheaders.X-Script-Name=/headscale-admin"\
       - "traefik.http.routers.headscale-ui.middlewares=headscale-ui-stripprefix,headscale-ui-headers,security-headers"' docker-compose.yml
     
