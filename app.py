@@ -8,12 +8,23 @@ from datetime import timedelta
 from flask import Flask, render_template
 from flask_login import LoginManager
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Configure ProxyFix for reverse proxy support
+# This allows Flask to trust X-Forwarded-* headers from nginx/Traefik
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,  # Trust X-Forwarded-For
+    x_proto=1,  # Trust X-Forwarded-Proto (HTTP vs HTTPS)
+    x_host=1,  # Trust X-Forwarded-Host
+    x_prefix=1  # Trust X-Forwarded-Prefix
+)
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -31,7 +42,15 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-pro
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 # Session configuration for security
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+# In production, require HTTPS for session cookies (ProxyFix handles X-Forwarded-Proto)
+# Set SESSION_COOKIE_SECURE=false in .env to disable if not using HTTPS
+session_secure = os.getenv('SESSION_COOKIE_SECURE')
+if session_secure is not None:
+    app.config['SESSION_COOKIE_SECURE'] = session_secure.lower() == 'true'
+else:
+    # Default: secure in production, insecure in development
+    app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 

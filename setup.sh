@@ -423,6 +423,7 @@ LOGIN_USER=$LOGIN_USER
 LOGIN_PASSWORD=$LOGIN_PASSWORD
 
 # Session
+# Only enable Secure flag if using SSL/HTTPS
 SESSION_COOKIE_SECURE=$([ "$USE_SSL" = true ] && echo "true" || echo "false")
 SESSION_COOKIE_HTTPONLY=true
 SESSION_COOKIE_SAMESITE=Lax
