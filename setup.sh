@@ -725,17 +725,22 @@ services:
 
   # Headscale Coordination Server (Optional)
   headscale:
-    image: headscale/headscale:v0.27.1
+    image: headscale/headscale:latest
     container_name: headscale
     restart: unless-stopped
+    read_only: true
     
     profiles:
       - headscale
     
     command: serve
     
+    tmpfs:
+      - /var/run/headscale
+    
     ports:
-      - "${HEADSCALE_PORT:-8080}:8080"
+      - "0.0.0.0:${HEADSCALE_PORT:-8080}:8080"
+      - "0.0.0.0:9090:9090"
       - "41641:41641/udp"
     
     volumes:
@@ -747,7 +752,7 @@ services:
       - headscale-network
     
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "headscale", "health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -865,27 +870,64 @@ touch history.json printers.json
 if [ "$USE_HEADSCALE" = true ]; then
     # Create Headscale configuration
     if [ ! -f config/headscale/config.yaml ]; then
-        print_info "Creating Headscale configuration..."
-        cat > config/headscale/config.yaml << HEADSCALE_EOF
+        print_info "Downloading latest Headscale configuration template..."
+        
+        # Download the latest config example from GitHub
+        if curl -sSL https://raw.githubusercontent.com/juanfont/headscale/main/config-example.yaml -o config/headscale/config.yaml; then
+            print_success "Downloaded latest config template"
+            
+            print_info "Customizing configuration for your setup..."
+            
+            # Customize only the required fields using sed
+            sed -i "s|^server_url:.*|server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT|" config/headscale/config.yaml
+            sed -i "s|^listen_addr:.*|listen_addr: 0.0.0.0:8080|" config/headscale/config.yaml
+            sed -i "s|^metrics_listen_addr:.*|metrics_listen_addr: 0.0.0.0:9090|" config/headscale/config.yaml
+            sed -i "s|^grpc_listen_addr:.*|grpc_listen_addr: 0.0.0.0:50443|" config/headscale/config.yaml
+            
+            # Update unix_socket path for container
+            sed -i "s|^unix_socket:.*|unix_socket: /var/run/headscale/headscale.sock|" config/headscale/config.yaml
+            
+            # Update base_domain for DNS
+            sed -i "s|^  base_domain:.*|  base_domain: headscale.local|" config/headscale/config.yaml
+            
+            # Set policy path
+            sed -i "s|^  path: \"\"|  path: /etc/headscale/acl.json|" config/headscale/config.yaml
+            
+            print_success "Customized Headscale configuration"
+        else
+            print_error "Failed to download config template, creating basic config..."
+            # Fallback to basic config if download fails
+            cat > config/headscale/config.yaml << HEADSCALE_EOF
 server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
+grpc_listen_addr: 0.0.0.0:50443
+grpc_allow_insecure: false
 
-# Keys and database in persistent data directory
-private_key_path: /var/lib/headscale/private.key
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
 
-ip_prefixes:
-  - 100.64.0.0/10
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
 
-db_type: sqlite3
-db_path: /var/lib/headscale/db.sqlite
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
 
-# Unix socket in data directory
-unix_socket: /var/lib/headscale/headscale.sock
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
 
-# DNS configuration (v0.27.1+ format)
+log:
+  level: info
+  format: text
+
+policy:
+  mode: file
+  path: /etc/headscale/acl.json
+
 dns:
   magic_dns: true
   base_domain: headscale.local
@@ -893,23 +935,16 @@ dns:
   nameservers:
     global:
       - 1.1.1.1
-      - 8.8.8.8
-
-# ACL policy (v0.27.1+ format)
-policy:
-  path: /etc/headscale/acl.json
+      - 1.0.0.1
 
 derp:
   server:
     enabled: false
   urls:
     - https://controlplane.tailscale.com/derpmap/default
-
-log:
-  level: info
-  format: text
 HEADSCALE_EOF
-        print_success "Created Headscale configuration"
+            print_success "Created basic Headscale configuration"
+        fi
     else
         print_info "Headscale configuration already exists, skipping"
     fi
