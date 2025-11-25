@@ -237,21 +237,97 @@ docker compose exec traefik cat /etc/traefik/traefik.yml
 ### Issue: Still getting 404
 **Check:**
 1. Is headscale-ui container running? `docker ps | grep headscale-ui`
-2. Is port 3000 exposed? `docker port headscale-ui`
-3. Can you reach it directly? `curl http://localhost:3000/`
+2. Is port exposed correctly? `docker port headscale-ui` (should show 3000->3000 or custom port)
+3. Can you reach it directly? `curl http://localhost:3009/` (use your actual port)
 4. Check Flask logs: `docker compose logs app | grep headscale-admin`
+5. Verify nginx config: `cat /etc/nginx/sites-enabled/barcode-central | grep headscale-admin`
 
-### Issue: Getting 502 Bad Gateway
-**Check:**
-1. Is headscale container running? `docker ps | grep headscale`
-2. Can headscale-ui reach headscale? `docker compose exec headscale-ui curl http://headscale:8080/health`
-3. Is HEADSCALE_API_KEY set? `grep HEADSCALE_API_KEY .env`
+### Issue: Getting 502 Bad Gateway ⚠️ COMMON ISSUE
+**This is the most common issue!** 502 means nginx can reach headscale-ui, but headscale-ui cannot reach the headscale backend.
+
+**Run the diagnostic script:**
+```bash
+./diagnose_headscale_ui_502.sh
+```
+
+**Most likely causes:**
+1. **HEADSCALE_API_KEY not set** (90% of cases)
+   ```bash
+   # Generate API key
+   docker compose exec headscale headscale apikeys create
+   
+   # Add to .env file
+   echo "HEADSCALE_API_KEY=your-generated-key-here" >> .env
+   
+   # Restart headscale-ui
+   docker compose restart headscale-ui
+   ```
+
+2. **Headscale container is unhealthy**
+   ```bash
+   # Check status
+   docker compose ps headscale
+   
+   # Check logs
+   docker compose logs headscale
+   
+   # Common fix: restart headscale
+   docker compose restart headscale
+   ```
+
+3. **Network connectivity issue**
+   ```bash
+   # Test if headscale-ui can reach headscale
+   docker compose exec headscale-ui curl http://headscale:8080/health
+   
+   # Should return: {"status":"ok"}
+   # If not, check Docker networks
+   docker network ls
+   docker network inspect barcode-network
+   docker network inspect headscale-network
+   ```
+
+4. **Wrong HS_SERVER environment variable**
+   ```bash
+   # Check what headscale-ui is configured to use
+   docker compose exec headscale-ui env | grep HS_SERVER
+   
+   # Should be: HS_SERVER=http://headscale:8080
+   # If wrong, fix in docker-compose.yml and restart
+   ```
+
+**Step-by-step fix for 502:**
+```bash
+# 1. Check if headscale is healthy
+docker compose ps
+
+# 2. If headscale is unhealthy, check logs
+docker compose logs headscale
+
+# 3. Generate API key if missing
+docker compose exec headscale headscale apikeys create
+
+# 4. Add API key to .env
+nano .env
+# Add line: HEADSCALE_API_KEY=your-key-here
+
+# 5. Restart headscale-ui
+docker compose restart headscale-ui
+
+# 6. Wait 10 seconds and test
+sleep 10
+curl -I http://localhost:3009/
+
+# 7. Check logs
+docker compose logs headscale-ui
+```
 
 ### Issue: Authentication not working
 **Check:**
 1. Are credentials set? `grep HEADSCALE_UI .env`
 2. Try credentials from `.env` file
 3. Check container logs: `docker compose logs headscale-ui`
+4. Verify AUTH_TYPE is set: `docker compose exec headscale-ui env | grep AUTH_TYPE`
 
 ## Next Steps
 
