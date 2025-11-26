@@ -1041,12 +1041,15 @@ if [ "$USE_HEADSCALE" = true ]; then
             
             # Customize required fields using sed
             # Determine correct server_url based on reverse proxy configuration
+            # NOTE: We assume HTTPS for Traefik (with SSL) and Nginx (after certbot setup)
+            #       Change to http:// if you're not putting SSL termination in front of Headscale
             if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
                 HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
             elif [ "$USE_TRAEFIK" = true ]; then
                 HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
             elif [ "$USE_NGINX" = true ]; then
-                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+                # Nginx: Assume HTTPS after certbot setup
+                HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
             else
                 HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP"
             fi
@@ -1068,17 +1071,21 @@ if [ "$USE_HEADSCALE" = true ]; then
             print_warning "Failed to download config template, creating basic config..."
             # Fallback to basic config
             # Determine correct server_url based on reverse proxy configuration
+            # NOTE: We assume HTTPS for Traefik (with SSL) and Nginx (after certbot setup)
+            #       Change to http:// if you're not putting SSL termination in front of Headscale
             if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
                 HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
             elif [ "$USE_TRAEFIK" = true ]; then
                 HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
             elif [ "$USE_NGINX" = true ]; then
-                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+                # Nginx: Assume HTTPS after certbot setup
+                HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
             else
                 HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP"
             fi
             
             cat > config/headscale/config.yaml << HEADSCALE_EOF
+# NOTE: server_url assumes HTTPS. Change to http:// if not using SSL termination
 server_url: $HEADSCALE_SERVER_URL
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
