@@ -669,7 +669,7 @@ services:
     
     container_name: barcode-central
     restart: unless-stopped
-    
+COMPOSE_EOF
 
 # Add Headscale routing capabilities if enabled
 if [ "$USE_HEADSCALE" = true ]; then
@@ -682,10 +682,8 @@ if [ "$USE_HEADSCALE" = true ]; then
     # Use routing wrapper script
     entrypoint: ["/docker-entrypoint-wrapper.sh"]
     command: ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
-    
 COMPOSE_EOF
 fi
-COMPOSE_EOF
 
 # Add ports based on reverse proxy choice
 if [ "$USE_TRAEFIK" = true ]; then
@@ -706,6 +704,7 @@ fi
 cat >> docker-compose.yml << 'COMPOSE_EOF'
     env_file:
       - .env
+COMPOSE_EOF
 
 if [ "$USE_HEADSCALE" = true ]; then
     cat >> docker-compose.yml << 'COMPOSE_EOF'
@@ -715,12 +714,15 @@ if [ "$USE_HEADSCALE" = true ]; then
 COMPOSE_EOF
 fi
     
+cat >> docker-compose.yml << 'COMPOSE_EOF'
+    
     volumes:
       - ./printers.json:/app/printers.json
       - ./history.json:/app/history.json
       - ./templates_zpl:/app/templates_zpl
       - ./logs:/app/logs
       - ./previews:/app/previews
+COMPOSE_EOF
 
 if [ "$USE_HEADSCALE" = true ]; then
     cat >> docker-compose.yml << 'COMPOSE_EOF'
@@ -728,6 +730,8 @@ if [ "$USE_HEADSCALE" = true ]; then
       - ./docker-entrypoint-wrapper.sh:/docker-entrypoint-wrapper.sh:ro
 COMPOSE_EOF
 fi
+
+cat >> docker-compose.yml << 'COMPOSE_EOF'
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -738,13 +742,13 @@ fi
     
     networks:
       - barcode-network
+COMPOSE_EOF
 
 if [ "$USE_HEADSCALE" = true ]; then
     cat >> docker-compose.yml << 'COMPOSE_EOF'
       - headscale-network
 COMPOSE_EOF
 fi
-COMPOSE_EOF
 
 # Add Traefik labels if enabled
 if [ "$USE_TRAEFIK" = true ]; then
