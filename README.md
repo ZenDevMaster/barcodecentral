@@ -13,6 +13,8 @@ A modern web application for managing and printing ZPL (Zebra Programming Langua
 
 ## The Problem
 
+![Print Label Dialog](.github/screenshots/print_label.jpg)
+
 You have networked thermal label printers, but the label maker software (such as Bartender), is expensive or not accessible to the whole company? 
 The font desk needs to print a quick address label, Network engineer needs some cable labels, or the warehouse needs to quickly re-print a SKU barcode? 
 
@@ -22,6 +24,7 @@ Barcode Central's primary mission is to get professional labels printed fast and
 
 Designed to be hosted locally inside your LAN or a small VPS. For VPS configurations it comes integrated with Headscale to create a (nearly) automatic VPN mesh - enabling direct access to your label printers hidden behind a firewalls. 
 
+![Barcode Central](.github/ZenDevMaster_BarcodeCentral_Stars.jpg)
 
 ## Features
 
@@ -32,16 +35,25 @@ Designed to be hosted locally inside your LAN or a small VPS. For VPS configurat
 - **Template Editor**: Built-in code editor with syntax highlighting
 - **Variable Substitution**: Dynamic label generation with custom data
 
+![Label Editor](.github/screenshots/label_template_editor.jpg)
+
+![Template List](.github/screenshots/view_templates.jpg)
+
+
 ### 🖨️ Printer Management
 - **Network Printers**: Support for Zebra / ZPL Compatible network printers via TCP/IP
 - **Multiple Printers**: Manage multiple printer configurations
 - **Printer Testing**: Test connectivity and print test labels
+
+![Add Printer Dialog](.github/screenshots/add_printer_dialogue.jpg)
 
 ### 📊 Print Job History
 - **Job Tracking**: Complete history of all print jobs
 - **Search & Filter**: Find jobs by template, printer, or date
 - **Job Details**: View template data and parameters for each job
 - **Export**: Download history data
+
+![Print Label](.github/screenshots/print_label.jpg)
 
 ### 🚀 Modern Architecture
 - **RESTful API**: Clean API design for all operations
@@ -66,6 +78,8 @@ cd barcodecentral
 # Quickstart: Run through the configuration wizard
 ./setup.sh
 ```
+
+![Setup Process](.github/screenshots/setup_process_gif.gif)
 
 Access the application at `http://localhost:5000`
 
