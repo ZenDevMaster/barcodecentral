@@ -670,6 +670,21 @@ services:
     container_name: barcode-central
     restart: unless-stopped
     
+
+# Add Headscale routing capabilities if enabled
+if [ "$USE_HEADSCALE" = true ]; then
+    cat >> docker-compose.yml << 'COMPOSE_EOF'
+    
+    # Enable route manipulation for Tailscale routing
+    cap_add:
+      - NET_ADMIN
+    
+    # Use routing wrapper script
+    entrypoint: ["/docker-entrypoint-wrapper.sh"]
+    command: ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]
+    
+COMPOSE_EOF
+fi
 COMPOSE_EOF
 
 # Add ports based on reverse proxy choice
@@ -691,6 +706,14 @@ fi
 cat >> docker-compose.yml << 'COMPOSE_EOF'
     env_file:
       - .env
+
+if [ "$USE_HEADSCALE" = true ]; then
+    cat >> docker-compose.yml << 'COMPOSE_EOF'
+    
+    environment:
+      - ADVERTISED_ROUTES=${ADVERTISED_ROUTES:-}
+COMPOSE_EOF
+fi
     
     volumes:
       - ./printers.json:/app/printers.json
@@ -698,6 +721,13 @@ cat >> docker-compose.yml << 'COMPOSE_EOF'
       - ./templates_zpl:/app/templates_zpl
       - ./logs:/app/logs
       - ./previews:/app/previews
+
+if [ "$USE_HEADSCALE" = true ]; then
+    cat >> docker-compose.yml << 'COMPOSE_EOF'
+      # Routing wrapper script for Tailscale
+      - ./docker-entrypoint-wrapper.sh:/docker-entrypoint-wrapper.sh:ro
+COMPOSE_EOF
+fi
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -708,6 +738,12 @@ cat >> docker-compose.yml << 'COMPOSE_EOF'
     
     networks:
       - barcode-network
+
+if [ "$USE_HEADSCALE" = true ]; then
+    cat >> docker-compose.yml << 'COMPOSE_EOF'
+      - headscale-network
+COMPOSE_EOF
+fi
 COMPOSE_EOF
 
 # Add Traefik labels if enabled
@@ -969,19 +1005,26 @@ COMPOSE_EOF
     
     hostname: barcode-central-server
     
+    # Use startup script for initialization
+    entrypoint: ["/tailscale-startup.sh"]
+    
     environment:
-      - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY:-}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=true
       - TS_ACCEPT_DNS=true
-      - TS_EXTRA_ARGS=--login-server=http://headscale:8080
+      - HEADSCALE_URL=http://headscale:8080
     
     volumes:
       - ./data/tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
+      # Mount startup and iptables configuration scripts
+      - ./tailscale-startup.sh:/tailscale-startup.sh:ro
+      - ./tailscale-iptables.sh:/tailscale-iptables.sh:ro
     
     cap_add:
       - NET_ADMIN
+      - SYS_MODULE
       - SYS_MODULE
     
     networks:
@@ -1170,6 +1213,530 @@ ACL_EOF
         print_info "Headscale ACL policy already exists, skipping"
     fi
 fi
+# Create routing and mesh joining scripts for Headscale
+if [ "$USE_HEADSCALE" = true ]; then
+    print_info "Creating Headscale routing scripts..."
+    
+    # Create app container routing wrapper
+    cat > docker-entrypoint-wrapper.sh << 'WRAPPER_EOF'
+#!/bin/bash
+set -e
+
+echo "[$(date)] Starting barcode-central with Tailscale routing configuration..."
+
+# Wait for Docker networking to stabilize
+# This ensures DNS resolution is available
+sleep 3
+
+# Resolve tailscale container IP on shared network using Docker DNS
+TAILSCALE_IP=$(getent hosts barcode-central-tailscale | awk '{ print $1 }')
+
+if [ -n "$TAILSCALE_IP" ]; then
+    echo "[$(date)] Configuring routes via Tailscale gateway: $TAILSCALE_IP"
+    
+    # Add route to Tailscale mesh network (100.64.0.0/10)
+    # This is the standard Tailscale IP range
+    if ip route add 100.64.0.0/10 via $TAILSCALE_IP 2>/dev/null; then
+        echo "[$(date)] ✓ Added route: 100.64.0.0/10 via $TAILSCALE_IP"
+    else
+        echo "[$(date)] Route 100.64.0.0/10 already exists or failed to add"
+    fi
+    
+    # Add routes for advertised subnets (if configured via environment variable)
+    # Format: ADVERTISED_ROUTES="192.168.11.0/24 10.0.1.0/24"
+    if [ -n "$ADVERTISED_ROUTES" ]; then
+        echo "[$(date)] Adding routes for advertised subnets..."
+        for ROUTE in $ADVERTISED_ROUTES; do
+            if ip route add $ROUTE via $TAILSCALE_IP 2>/dev/null; then
+                echo "[$(date)] ✓ Added route: $ROUTE via $TAILSCALE_IP"
+            else
+                echo "[$(date)] Route $ROUTE already exists or failed to add"
+            fi
+        done
+    fi
+    
+    # Display configured routes for verification
+    echo "[$(date)] Current routes to Tailscale gateway:"
+    ip route | grep -E "(100.64|$TAILSCALE_IP)" || echo "  (No routes found - check for errors above)"
+    
+    echo "[$(date)] ✓ Routing configuration complete"
+else
+    echo "[$(date)] ERROR: Could not resolve Tailscale container IP"
+    echo "[$(date)] DNS lookup for 'barcode-central-tailscale' failed"
+    echo "[$(date)] Continuing without Tailscale routing..."
+fi
+
+echo "[$(date)] Executing application: $@"
+
+# Execute the original application command
+# This passes through to gunicorn or whatever was specified in CMD
+exec "$@"
+WRAPPER_EOF
+    
+    chmod +x docker-entrypoint-wrapper.sh
+    print_success "Created docker-entrypoint-wrapper.sh"
+    
+    # Create Tailscale startup script
+    cat > tailscale-startup.sh << 'STARTUP_EOF'
+#!/bin/sh
+set -e
+
+echo "[$(date)] ========================================"
+echo "[$(date)] Tailscale Container Initialization"
+echo "[$(date)] ========================================"
+
+# Start Tailscale daemon in background
+echo "[$(date)] Starting tailscaled daemon..."
+tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state &
+
+# Wait for daemon to be ready
+echo "[$(date)] Waiting for tailscaled to be ready..."
+RETRIES=10
+while [ $RETRIES -gt 0 ]; do
+    if tailscale status >/dev/null 2>&1; then
+        echo "[$(date)] ✓ Tailscale daemon is ready"
+        break
+    fi
+    echo "[$(date)] Daemon not ready yet... ($RETRIES retries left)"
+    sleep 2
+    RETRIES=$((RETRIES - 1))
+done
+
+if [ $RETRIES -eq 0 ]; then
+    echo "[$(date)] ERROR: Tailscale daemon failed to start after 20 seconds"
+    exit 1
+fi
+
+# Prepare connection parameters
+HEADSCALE_URL="${HEADSCALE_URL:-http://headscale:8080}"
+echo "[$(date)] Headscale server: $HEADSCALE_URL"
+
+# Connect to Headscale
+echo "[$(date)] Connecting to Headscale mesh network..."
+
+if [ -n "$TS_AUTHKEY" ]; then
+    # Authkey provided - automatic authentication
+    echo "[$(date)] Using provided authkey for automatic authentication"
+    
+    tailscale up \
+        --authkey="$TS_AUTHKEY" \
+        --accept-routes=true \
+        --login-server="$HEADSCALE_URL" \
+        --hostname="${HOSTNAME:-barcode-central-server}"
+    
+    if [ $? -eq 0 ]; then
+        echo "[$(date)] ✓ Successfully connected to Headscale mesh"
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
+        echo "[$(date)] Assigned Tailscale IP: $TAILSCALE_IP"
+    else
+        echo "[$(date)] ERROR: Failed to connect with authkey"
+        exit 1
+    fi
+else
+    # No authkey - manual registration required
+    echo "[$(date)] No authkey provided - manual registration required"
+    
+    tailscale up \
+        --accept-routes=true \
+        --login-server="$HEADSCALE_URL" \
+        --hostname="${HOSTNAME:-barcode-central-server}"
+    
+    echo "[$(date)] ========================================"
+    echo "[$(date)] MANUAL REGISTRATION REQUIRED"
+    echo "[$(date)] ========================================"
+    echo "[$(date)] "
+    echo "[$(date)] Check the logs above for a registration URL like:"
+    echo "[$(date)] https://headscale.example.com/register/NODEKEY"
+    echo "[$(date)] "
+    echo "[$(date)] Then run the automated joining script:"
+    echo "[$(date)]   ./scripts/join-headscale-mesh.sh"
+    echo "[$(date)] "
+    echo "[$(date)] Or manually register with:"
+    echo "[$(date)]   docker exec headscale headscale nodes register --user barcode-central --key NODEKEY"
+    echo "[$(date)] ========================================"
+fi
+
+# Launch iptables configuration in background
+echo "[$(date)] Launching iptables configuration..."
+/tailscale-iptables.sh &
+
+# Keep container running
+echo "[$(date)] ✓ Tailscale startup complete"
+echo "[$(date)] Container is now monitoring Tailscale connection..."
+exec tail -f /dev/null
+STARTUP_EOF
+    
+    chmod +x tailscale-startup.sh
+    print_success "Created tailscale-startup.sh"
+    
+    # Create iptables configuration script
+    cat > tailscale-iptables.sh << 'IPTABLES_EOF'
+#!/bin/sh
+set -e
+
+echo "[$(date)] ========================================"
+echo "[$(date)] Tailscale IPTables Configuration"
+echo "[$(date)] ========================================"
+
+# Wait for Tailscale to initialize its iptables chains
+echo "[$(date)] Waiting for Tailscale iptables initialization..."
+sleep 5
+
+# Wait for ts-input chain to exist (created by Tailscale)
+RETRIES=10
+while [ $RETRIES -gt 0 ]; do
+    if iptables -L ts-input -n >/dev/null 2>&1; then
+        echo "[$(date)] ✓ Tailscale iptables chains detected"
+        break
+    fi
+    echo "[$(date)] Waiting for ts-input chain... ($RETRIES retries left)"
+    sleep 2
+    RETRIES=$((RETRIES - 1))
+done
+
+if [ $RETRIES -eq 0 ]; then
+    echo "[$(date)] WARNING: ts-input chain not found, iptables rules may not work"
+    echo "[$(date)] Continuing anyway..."
+fi
+
+echo "[$(date)] Configuring iptables for Docker network access..."
+
+# ============================================================================
+# INPUT RULES - Allow Docker networks through Tailscale's ts-input chain
+# ============================================================================
+
+# Allow headscale-network (172.29.0.0/16)
+if iptables -I ts-input 1 -s 172.29.0.0/16 -j ACCEPT 2>/dev/null; then
+    echo "[$(date)] ✓ Added ts-input rule for headscale-network (172.29.0.0/16)"
+else
+    echo "[$(date)] ts-input rule for 172.29.0.0/16 may already exist"
+fi
+
+# Allow barcode-network (172.23.0.0/16)
+if iptables -I ts-input 1 -s 172.23.0.0/16 -j ACCEPT 2>/dev/null; then
+    echo "[$(date)] ✓ Added ts-input rule for barcode-network (172.23.0.0/16)"
+else
+    echo "[$(date)] ts-input rule for 172.23.0.0/16 may already exist"
+fi
+
+# ============================================================================
+# FORWARD RULES - Allow routing from Docker networks to Tailscale destinations
+# ============================================================================
+
+# Forward from headscale-network to Tailscale mesh (100.64.0.0/10)
+if iptables -I FORWARD 1 -s 172.29.0.0/16 -d 100.64.0.0/10 -j ACCEPT 2>/dev/null; then
+    echo "[$(date)] ✓ Added FORWARD rule: 172.29.0.0/16 → 100.64.0.0/10"
+else
+    echo "[$(date)] FORWARD rule 172.29.0.0/16 → 100.64.0.0/10 may already exist"
+fi
+
+# Forward from barcode-network to Tailscale mesh
+if iptables -I FORWARD 1 -s 172.23.0.0/16 -d 100.64.0.0/10 -j ACCEPT 2>/dev/null; then
+    echo "[$(date)] ✓ Added FORWARD rule: 172.23.0.0/16 → 100.64.0.0/10"
+else
+    echo "[$(date)] FORWARD rule 172.23.0.0/16 → 100.64.0.0/10 may already exist"
+fi
+
+# ============================================================================
+# NAT RULES - Masquerade outgoing traffic for proper return routing
+# ============================================================================
+
+# NAT for headscale-network to Tailscale mesh
+if iptables -t nat -A POSTROUTING -s 172.29.0.0/16 -d 100.64.0.0/10 -j MASQUERADE 2>/dev/null; then
+    echo "[$(date)] ✓ Added NAT rule: 172.29.0.0/16 → 100.64.0.0/10"
+else
+    echo "[$(date)] NAT rule for 172.29.0.0/16 may already exist"
+fi
+
+# NAT for barcode-network to Tailscale mesh
+if iptables -t nat -A POSTROUTING -s 172.23.0.0/16 -d 100.64.0.0/10 -j MASQUERADE 2>/dev/null; then
+    echo "[$(date)] ✓ Added NAT rule: 172.23.0.0/16 → 100.64.0.0/10"
+else
+    echo "[$(date)] NAT rule for 172.23.0.0/16 may already exist"
+fi
+
+# ============================================================================
+# VERIFICATION - Display configured rules
+# ============================================================================
+
+echo "[$(date)] ========================================"
+echo "[$(date)] Verification: Active iptables rules"
+echo "[$(date)] ========================================"
+
+echo "[$(date)] "
+echo "[$(date)] ts-input chain (first 10 rules):"
+iptables -L ts-input -n -v --line-numbers 2>/dev/null | head -12 || echo "  (chain not found)"
+
+echo "[$(date)] "
+echo "[$(date)] FORWARD chain (Docker-related rules):"
+iptables -L FORWARD -n -v --line-numbers 2>/dev/null | grep -E "172\.(29|23)" || echo "  (no Docker rules found)"
+
+echo "[$(date)] "
+echo "[$(date)] NAT POSTROUTING (masquerade rules):"
+iptables -t nat -L POSTROUTING -n -v --line-numbers 2>/dev/null | grep -E "172\.(29|23)" || echo "  (no NAT rules found)"
+
+echo "[$(date)] ========================================"
+echo "[$(date)] ✓ IPTables configuration complete"
+echo "[$(date)] ========================================"
+IPTABLES_EOF
+    
+    chmod +x tailscale-iptables.sh
+    print_success "Created tailscale-iptables.sh"
+    
+    # Create automated mesh joining script (needs to be in scripts directory)
+    mkdir -p scripts
+    cat > scripts/join-headscale-mesh.sh << 'JOINMESH_EOF'
+#!/bin/bash
+# Automated Headscale Mesh Joining Script
+# Joins barcode-central-tailscale container to Headscale mesh network
+
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_header() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$1"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# Main script
+clear
+print_header "Headscale Mesh Joining - Automated Setup"
+
+# Step 1: Check containers are running
+print_info "Step 1/6: Checking container status..."
+
+if ! docker ps | grep -q "headscale"; then
+    print_error "Headscale container is not running"
+    echo ""
+    echo "Start containers with:"
+    echo "  docker compose --profile headscale up -d"
+    echo ""
+    exit 1
+fi
+print_success "Headscale container is running"
+
+if ! docker ps | grep -q "barcode-central-tailscale"; then
+    print_error "Tailscale container is not running"
+    echo ""
+    echo "Start containers with:"
+    echo "  docker compose --profile headscale up -d"
+    echo ""
+    exit 1
+fi
+print_success "Tailscale container is running"
+
+if ! docker ps | grep -q "barcode-central"; then
+    print_warning "App container is not running (optional for this step)"
+else
+    print_success "App container is running"
+fi
+
+echo ""
+
+# Step 2: Create user in Headscale
+print_info "Step 2/6: Creating Headscale user..."
+
+USER_OUTPUT=$(docker exec headscale headscale users create barcode-central 2>&1 || true)
+if echo "$USER_OUTPUT" | grep -q "already exists"; then
+    print_info "User 'barcode-central' already exists (OK)"
+elif echo "$USER_OUTPUT" | grep -q "User created"; then
+    print_success "Created user 'barcode-central'"
+else
+    print_warning "Unexpected output creating user, continuing anyway..."
+    echo "  Output: $USER_OUTPUT"
+fi
+
+echo ""
+
+# Step 3: Extract node key from Tailscale logs
+print_info "Step 3/6: Extracting node registration key..."
+print_info "Monitoring Tailscale container logs for registration URL..."
+
+NODE_KEY=""
+TIMEOUT=30
+ELAPSED=0
+
+while [ -z "$NODE_KEY" ] && [ $ELAPSED -lt $TIMEOUT ]; do
+    # Look for registration URL pattern in logs
+    # Format: https://headscale.example.com/register/nodekey:ABCD1234...
+    REG_URL=$(docker logs barcode-central-tailscale 2>&1 | \
+        grep -oP 'https?://[^/]+/register/\K[a-zA-Z0-9:_-]+' | \
+        tail -1 || true)
+    
+    if [ -n "$REG_URL" ]; then
+        NODE_KEY="$REG_URL"
+        break
+    fi
+    
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    echo -n "."
+done
+echo ""
+
+if [ -z "$NODE_KEY" ]; then
+    print_error "Could not find registration URL in logs"
+    echo ""
+    print_warning "Manual registration required:"
+    echo ""
+    echo "1. Check container logs:"
+    echo "   docker logs barcode-central-tailscale"
+    echo ""
+    echo "2. Find a URL like:"
+    echo "   https://headscale.example.com/register/nodekey:ABCD1234..."
+    echo ""
+    echo "3. Extract the node key (everything after /register/) and run:"
+    echo "   docker exec headscale headscale nodes register \\"
+    echo "     --user barcode-central \\"
+    echo "     --key 'nodekey:ABCD1234...'"
+    echo ""
+    exit 1
+fi
+
+print_success "Found node key: ${NODE_KEY:0:30}..."
+echo ""
+
+# Step 4: Register node in Headscale
+print_info "Step 4/6: Registering node in Headscale..."
+
+if docker exec headscale headscale nodes register \
+    --user barcode-central \
+    --key "$NODE_KEY" 2>&1; then
+    print_success "Node registered successfully"
+else
+    print_error "Node registration failed"
+    echo ""
+    echo "Try manual registration:"
+    echo "  docker exec headscale headscale nodes register \\"
+    echo "    --user barcode-central \\"
+    echo "    --key '$NODE_KEY'"
+    echo ""
+    exit 1
+fi
+
+echo ""
+
+# Step 5: Verify mesh connectivity
+print_info "Step 5/6: Verifying mesh connectivity..."
+sleep 3
+
+if docker exec barcode-central-tailscale tailscale status 2>&1 | grep -q "100.64"; then
+    TAILSCALE_IP=$(docker exec barcode-central-tailscale tailscale ip -4 2>/dev/null || echo "unknown")
+    print_success "Tailscale mesh connected!"
+    echo "  Tailscale IP: $TAILSCALE_IP"
+else
+    print_warning "Tailscale may not be fully connected yet"
+    echo ""
+    echo "Check status with:"
+    echo "  docker exec barcode-central-tailscale tailscale status"
+fi
+
+echo ""
+
+# Step 6: Configure Headscale UI API key (if enabled)
+print_info "Step 6/6: Checking Headscale UI configuration..."
+
+if grep -q "HEADSCALE_UI_ENABLED=true" .env 2>/dev/null; then
+    print_info "Headscale UI is enabled, generating API key..."
+    
+    # Create API key - newer versions output format: just the key on last line
+    API_KEY=$(docker exec headscale headscale apikeys create --expiration 90d 2>&1 | \
+        tail -1 | \
+        tr -d '[:space:]' || true)
+    
+    # Validate API key (should be alphanumeric with dots/underscores, ~40+ chars)
+    if [ -n "$API_KEY" ] && [ ${#API_KEY} -gt 20 ]; then
+        print_success "API key generated: ${API_KEY:0:20}..."
+        
+        # Update .env file
+        if grep -q "^HEADSCALE_API_KEY=" .env; then
+            # Replace existing key
+            sed -i "s|^HEADSCALE_API_KEY=.*|HEADSCALE_API_KEY=$API_KEY|" .env
+            print_success "Updated HEADSCALE_API_KEY in .env"
+        elif grep -q "^# HEADSCALE_API_KEY=" .env; then
+            # Uncomment and set
+            sed -i "s|^# HEADSCALE_API_KEY=.*|HEADSCALE_API_KEY=$API_KEY|" .env
+            print_success "Set HEADSCALE_API_KEY in .env"
+        else
+            # Add new entry
+            echo "HEADSCALE_API_KEY=$API_KEY" >> .env
+            print_success "Added HEADSCALE_API_KEY to .env"
+        fi
+        
+        # Restart Headscale UI to pick up new API key
+        print_info "Restarting Headscale UI container..."
+        if docker compose restart headscale-ui 2>/dev/null; then
+            print_success "Headscale UI restarted"
+        else
+            print_warning "Could not restart Headscale UI (may need manual restart)"
+        fi
+    else
+        print_warning "API key generation failed or returned invalid key"
+        print_info "You may need to generate it manually:"
+        echo "  docker exec headscale headscale apikeys create --expiration 90d"
+    fi
+else
+    print_info "Headscale UI not enabled, skipping API key generation"
+fi
+
+# Final summary
+print_header "✓ Headscale Mesh Setup Complete!"
+
+echo "Your barcode-central server is now connected to the Headscale mesh network."
+echo ""
+echo "Next steps:"
+echo ""
+echo "1. Verify app container can reach Tailscale mesh:"
+echo "   docker exec barcode-central ip route | grep 100.64"
+echo ""
+echo "2. Generate authkey for Raspberry Pi devices:"
+echo "   ./scripts/generate-authkey.sh"
+echo ""
+echo "3. Setup Raspberry Pi print servers at each location:"
+echo "   (On each Pi, run the raspberry-pi-setup.sh script)"
+echo ""
+echo "4. After Pi's are connected, enable their subnet routes:"
+echo "   ./scripts/enable-routes.sh"
+echo ""
+echo "5. Test connectivity to remote printers:"
+echo "   docker exec barcode-central ping -c 3 <printer-ip>"
+echo ""
+
+print_header "Setup Complete!"
+JOINMESH_EOF
+    
+    chmod +x scripts/join-headscale-mesh.sh
+    print_success "Created scripts/join-headscale-mesh.sh"
+    
+    print_success "Created all Headscale routing scripts"
+fi
+
 
 # Generate nginx configuration files if using nginx
 if [ "$USE_NGINX" = true ]; then
@@ -1435,17 +2002,25 @@ echo ""
 if [ "$USE_HEADSCALE" = true ]; then
     ((STEP_NUM++))
     echo "$STEP_NUM. Setup Headscale mesh network:"
+    echo "   a) Join barcode-central to mesh (automated):"
+    echo "      ./scripts/join-headscale-mesh.sh"
+    echo ""
+    echo "   b) Generate pre-auth key for Raspberry Pi devices:"
+    echo "      ./scripts/generate-authkey.sh"
+    echo ""
+    echo "   c) Setup Raspberry Pi print servers at each location:"
+    echo "      On each Raspberry Pi, run:"
+    echo "      curl -sSL https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh | bash"
+    echo ""
+    echo "   d) Enable subnet routes from Raspberry Pis:"
+    echo "      ./scripts/enable-routes.sh"
+    echo ""
+    echo "   e) Verify connectivity:"
+    echo "      docker exec barcode-central ping -c 3 <printer-ip>"
+    echo ""
     
     if [ "$USE_HEADSCALE_UI" = true ]; then
-        echo "   a) Wait for services to start (30 seconds)"
-        echo "      sleep 30"
-        echo ""
-        echo "   b) Generate Headscale API key (automatic):"
-        echo "      API_KEY=\$(docker exec headscale headscale apikeys create --expiration 90d | grep -oP '(?<=Created API key: ).*')"
-        echo "      echo \"HEADSCALE_API_KEY=\$API_KEY\" >> .env"
-        echo "      docker compose restart headscale-ui"
-        echo ""
-        echo "   c) Access Headscale UI:"
+        echo "   f) Access Headscale UI at:"
         if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
             echo "      https://$HEADSCALE_DOMAIN/web/"
         elif [ "$USE_TRAEFIK" = true ]; then
@@ -1456,34 +2031,7 @@ if [ "$USE_HEADSCALE" = true ]; then
             echo "      http://$HEADSCALE_DOMAIN:$HEADSCALE_UI_EXTERNAL/web/"
         fi
         echo ""
-        echo "   d) Generate pre-auth key (in UI or via CLI):"
-        echo "      ./scripts/generate-authkey.sh"
-    else
-        echo "   a) Generate auth key:"
-        echo "      ./scripts/generate-authkey.sh"
     fi
-    echo ""
-    if [ "$USE_HEADSCALE_UI" = true ]; then
-        echo "   e) Setup Raspberry Pi print servers at each location:"
-    else
-        echo "   b) Setup Raspberry Pi print servers at each location:"
-    fi
-    echo "      On each Raspberry Pi, run:"
-    echo "      curl -sSL https://raw.githubusercontent.com/ZenDevMaster/barcodecentral/main/raspberry-pi-setup.sh | bash"
-    echo ""
-    if [ "$USE_HEADSCALE_UI" = true ]; then
-        echo "   f) Enable subnet routes (in UI or via CLI):"
-        echo "      ./scripts/enable-routes.sh"
-        echo ""
-        echo "   g) Verify connectivity:"
-    else
-        echo "   c) Enable subnet routes:"
-        echo "      ./scripts/enable-routes.sh"
-        echo ""
-        echo "   d) Verify connectivity:"
-    fi
-    echo "      docker exec -it barcode-central-tailscale tailscale ping <raspberry-pi-hostname>"
-    echo ""
 fi
 
 # Access URL

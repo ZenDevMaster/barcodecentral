@@ -13,18 +13,22 @@ A modern web application for managing and printing ZPL (Zebra Programming Langua
 
 ## The Problem
 
+Printing to your network thermal label printers is annoying. The software that shipped with the printer is insufficient, is expensive or not accessible to the whole company.
+
+Did you ever want to spit out a quick address label? Or a cable label, print off a SKU barcode, or just labels for your junk drawer? 
+
 ![Print Label Dialog](.github/screenshots/print_label.jpg)
 
-You have networked thermal label printers, but the label maker software (such as Bartender), is expensive or not accessible to the whole company? 
-The font desk needs to print a quick address label, Network engineer needs some cable labels, or the warehouse needs to quickly re-print a SKU barcode? 
 
-Enter Barcode Central. A simple, easy to use web-based printing interface. You can quickly add your ZPL-compatible printers, create ZPL-based Jinja2 (templated!) labels, and print them over and over.
+Enter Barcode Central. A simple, easy to use web-based printing interface that anybody can use. Quickly add your ZPL-compatible printers, create ZPL-based Jinja2 (templated!) labels, and print them over and over. 
 
-Barcode Central's primary mission is to get professional labels printed fast and easy.
+Modern AI LLMs are even pretty good at generating any label design you want and outputting directly to Jinja2 ZPL!
 
-Designed to be hosted locally inside your LAN or a small VPS. For VPS configurations it comes integrated with Headscale to create a (nearly) automatic VPN mesh - enabling direct access to your label printers hidden behind a firewalls. 
+Barcode Central's primary mission is to let your staff (or family) print professional labels super fast and easy.
 
-![Barcode Central](.github/ZenDevMaster_BarcodeCentral_Stars.jpg)
+Designed to be hosted locally inside your LAN or on a tiny VPS instance. For VPS configurations, Barcode Central it comes integrated with Headscale to create a (nearly) automatic VPN mesh - enabling direct and reliable access to your label printers from Barcode Central. 
+
+![Barcode Central](.github/ZenDevMaster_BarcodeCentral_Stars_Funny.jpg)
 
 ## Features
 

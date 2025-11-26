@@ -8,6 +8,10 @@ ENV PYTHONUNBUFFERED=1 \
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    iproute2 \
+    iputils-ping \
+    dnsutils \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
