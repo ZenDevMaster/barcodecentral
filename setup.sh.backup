@@ -1,6 +1,6 @@
 #!/bin/bash
-# Barcode Central - Interactive Setup Script (Refactored)
-# Configures deployment with separate domain architecture for headscale
+# Barcode Central - Interactive Setup Script
+# Configures deployment with logical real-world scenarios
 
 set -e
 
@@ -21,15 +21,10 @@ LOGIN_PASSWORD=""
 SECRET_KEY=""
 HTTP_PORT="5000"
 HTTPS_PORT="443"
-HEADSCALE_EXTERNAL_HTTP="8080"
-HEADSCALE_UI_EXTERNAL="8081"
-HEADSCALE_WIREGUARD_PORT="41641"
-REVERSE_PROXY=""
+HEADSCALE_PORT="8080"
 USE_TRAEFIK=false
-USE_NGINX=false
 USE_SSL=false
 USE_HEADSCALE=false
-USE_HEADSCALE_UI=false
 EXTERNAL_ACCESS=false
 
 # Helper functions
@@ -80,10 +75,8 @@ load_existing_config() {
         EXISTING_DOMAIN=$(grep "^DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_ACME_EMAIL=$(grep "^ACME_EMAIL=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_HEADSCALE_DOMAIN=$(grep "^HEADSCALE_DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
-        EXISTING_HEADSCALE_EXTERNAL_HTTP=$(grep "^HEADSCALE_EXTERNAL_HTTP=" .env 2>/dev/null | cut -d'=' -f2)
-        EXISTING_HEADSCALE_UI_EXTERNAL=$(grep "^HEADSCALE_UI_EXTERNAL=" .env 2>/dev/null | cut -d'=' -f2)
-        EXISTING_HEADSCALE_WIREGUARD_PORT=$(grep "^HEADSCALE_WIREGUARD_PORT=" .env 2>/dev/null | cut -d'=' -f2)
-        EXISTING_REVERSE_PROXY=$(grep "^REVERSE_PROXY=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HEADSCALE_PORT=$(grep "^HEADSCALE_PORT=" .env 2>/dev/null | cut -d'=' -f2)
+        EXISTING_HEADSCALE_UI_PORT=$(grep "^HEADSCALE_UI_PORT=" .env 2>/dev/null | cut -d'=' -f2)
         
         return 0
     fi
@@ -104,18 +97,18 @@ read
 
 # Step 1: LAN-only or External Access
 clear
-print_header "[1/8] Network Access"
+print_header "[1/7] Network Access"
 echo "How will you access Barcode Central?"
 echo ""
 echo "1) LAN only - Access from local network only"
-echo "   • Simple HTTP setup"
+echo "   • Simple HTTP setup (port 5000)"
 echo "   • Printers on same network or via direct IP"
-echo "   • You can still add your own reverse proxy later"
+echo "   • You can still add your own reverse proxy (nginx, etc.)"
 echo "   • No SSL configuration needed"
 echo ""
 echo "2) External access - Access from internet"
 echo "   • Requires domain name (FQDN)"
-echo "   • Optional reverse proxy (Traefik or Nginx) with SSL"
+echo "   • Optional Traefik reverse proxy with automatic SSL"
 echo "   • Can be combined with Headscale for remote printers"
 echo ""
 read -p "Enter choice [1-2]: " access_choice
@@ -143,8 +136,8 @@ sleep 1
 # Step 2: Domain Configuration (if external access)
 if [ "$EXTERNAL_ACCESS" = true ]; then
     clear
-    print_header "[2/8] Barcode Central Domain Configuration"
-    echo "Enter the domain name for Barcode Central."
+    print_header "[2/7] Domain Configuration"
+    echo "Enter your fully qualified domain name (FQDN)."
     echo "Example: print.example.com"
     echo ""
     
@@ -162,111 +155,78 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
         read -p "Domain (FQDN): " DOMAIN
     done
     
-    print_success "Barcode Central domain configured: $DOMAIN"
+    print_success "Domain configured: $DOMAIN"
     echo ""
     sleep 1
     
-    # Step 3: Reverse Proxy Selection
+    # Step 3: Traefik Configuration
     clear
-    print_header "[3/8] Reverse Proxy Configuration"
-    echo "Choose your reverse proxy setup:"
+    print_header "[3/7] Reverse Proxy (Traefik)"
+    echo "Do you want to use Traefik as a reverse proxy?"
     echo ""
-    echo "1) Traefik (Docker-native, automatic SSL with Let's Encrypt)"
-    echo "   • Automatic HTTPS certificates"
-    echo "   • Container-based routing via Docker networks"
-    echo "   • No port exposure except 80/443"
-    echo "   • Recommended for Docker deployments"
+    echo "Traefik provides:"
+    echo "  • Automatic routing to your application"
+    echo "  • Optional automatic SSL/HTTPS with Let's Encrypt"
+    echo "  • Security headers"
+    echo "  • Easy configuration"
     echo ""
-    echo "2) Nginx (Host-based, manual SSL with certbot)"
-    echo "   • Traditional nginx on host system"
-    echo "   • Manual SSL setup with certbot"
-    echo "   • Services exposed to localhost for nginx access"
-    echo "   • More control, manual configuration"
+    echo "If you choose 'no', you can use your own reverse proxy (nginx, etc.)"
     echo ""
-    echo "3) None (Manual configuration)"
-    echo "   • Configure your own reverse proxy"
-    echo "   • Direct port exposure"
-    echo ""
+    read -p "Use Traefik? [Y/n]: " use_traefik_choice
     
-    # Show existing choice if available
-    if [ -n "$EXISTING_REVERSE_PROXY" ]; then
-        print_info "Current choice: $EXISTING_REVERSE_PROXY"
-    fi
-    
-    read -p "Enter choice [1-3]: " proxy_choice
-    
-    case $proxy_choice in
-        1)
-            USE_TRAEFIK=true
-            REVERSE_PROXY="traefik"
-            DEPLOYMENT_TYPE="external-traefik"
-            print_success "Traefik selected"
+    if [[ ! "$use_traefik_choice" =~ ^[Nn]$ ]]; then
+        USE_TRAEFIK=true
+        DEPLOYMENT_TYPE="external-traefik"
+        print_success "Traefik enabled"
+        
+        # Step 4: SSL Configuration
+        echo ""
+        echo "Do you want automatic SSL/HTTPS with Let's Encrypt?"
+        echo ""
+        echo "Requirements:"
+        echo "  • Domain must point to this server's public IP"
+        echo "  • Ports 80 and 443 must be accessible from internet"
+        echo "  • Valid email address for Let's Encrypt notifications"
+        echo ""
+        read -p "Enable automatic SSL? [Y/n]: " use_ssl_choice
+        
+        if [[ ! "$use_ssl_choice" =~ ^[Nn]$ ]]; then
+            USE_SSL=true
             
-            # SSL Configuration for Traefik
             echo ""
-            echo "Do you want automatic SSL/HTTPS with Let's Encrypt?"
-            echo ""
-            echo "Requirements:"
-            echo "  • Domain must point to this server's public IP"
-            echo "  • Ports 80 and 443 must be accessible from internet"
-            echo "  • Valid email address for Let's Encrypt notifications"
-            echo ""
-            read -p "Enable automatic SSL? [Y/n]: " use_ssl_choice
-            
-            if [[ ! "$use_ssl_choice" =~ ^[Nn]$ ]]; then
-                USE_SSL=true
-                
-                echo ""
-                # Show existing email if available
-                if [ -n "$EXISTING_ACME_EMAIL" ]; then
-                    print_info "Current email: $EXISTING_ACME_EMAIL"
-                    read -p "Email for Let's Encrypt notifications [$EXISTING_ACME_EMAIL]: " ACME_EMAIL
-                    ACME_EMAIL=${ACME_EMAIL:-$EXISTING_ACME_EMAIL}
-                else
-                    read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
-                fi
-                
-                while [ -z "$ACME_EMAIL" ]; do
-                    print_error "Email cannot be empty"
-                    read -p "Email: " ACME_EMAIL
-                done
-                
-                print_success "SSL enabled with Let's Encrypt"
+            # Show existing email if available
+            if [ -n "$EXISTING_ACME_EMAIL" ]; then
+                print_info "Current email: $EXISTING_ACME_EMAIL"
+                read -p "Email for Let's Encrypt notifications [$EXISTING_ACME_EMAIL]: " ACME_EMAIL
+                ACME_EMAIL=${ACME_EMAIL:-$EXISTING_ACME_EMAIL}
             else
-                print_info "SSL disabled - Traefik will use HTTP only"
+                read -p "Email for Let's Encrypt notifications: " ACME_EMAIL
             fi
-            ;;
-        2)
-            USE_NGINX=true
-            REVERSE_PROXY="nginx"
-            DEPLOYMENT_TYPE="external-nginx"
-            print_success "Nginx selected"
-            print_info "Nginx configuration files will be generated"
-            print_info "SSL setup with certbot will be explained in post-setup instructions"
-            ;;
-        3)
-            REVERSE_PROXY="none"
-            DEPLOYMENT_TYPE="external-manual"
-            print_info "No reverse proxy - you will configure manually"
-            ;;
-        *)
-            print_warning "Invalid choice, defaulting to Traefik"
-            USE_TRAEFIK=true
-            REVERSE_PROXY="traefik"
-            DEPLOYMENT_TYPE="external-traefik"
-            ;;
-    esac
+            
+            while [ -z "$ACME_EMAIL" ]; do
+                print_error "Email cannot be empty"
+                read -p "Email: " ACME_EMAIL
+            done
+            
+            print_success "SSL enabled with Let's Encrypt"
+        else
+            print_info "SSL disabled - Traefik will use HTTP only"
+        fi
+    else
+        DEPLOYMENT_TYPE="external-manual"
+        print_info "Traefik disabled - you can configure your own reverse proxy"
+    fi
 else
-    print_info "[2/8] Skipping domain configuration (LAN-only)"
-    print_info "[3/8] Skipping reverse proxy configuration (LAN-only)"
+    print_info "[2/7] Skipping domain configuration (LAN-only)"
+    print_info "[3/7] Skipping Traefik configuration (LAN-only)"
 fi
 
 echo ""
 sleep 1
 
-# Step 4: Headscale Mesh VPN
+# Step 5: Headscale Mesh VPN
 clear
-print_header "[4/8] Headscale Mesh VPN (Optional)"
+print_header "[4/7] Headscale Mesh VPN (Optional)"
 echo "Do you want to enable Headscale for distributed printing?"
 echo ""
 echo "Headscale is a self-hosted mesh VPN that allows you to:"
@@ -284,55 +244,123 @@ if [[ "$use_headscale_choice" =~ ^[Yy]$ ]]; then
     USE_HEADSCALE=true
     
     echo ""
-    echo "Headscale needs its own domain name (separate from Barcode Central)."
-    echo "Example: headscale.example.com"
-    echo ""
-    
-    # Show existing Headscale domain if available
-    if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
-        print_info "Current Headscale domain: $EXISTING_HEADSCALE_DOMAIN"
-        read -p "Headscale domain [$EXISTING_HEADSCALE_DOMAIN]: " HEADSCALE_DOMAIN
-        HEADSCALE_DOMAIN=${HEADSCALE_DOMAIN:-$EXISTING_HEADSCALE_DOMAIN}
-    else
-        if [ "$EXTERNAL_ACCESS" = true ]; then
-            read -p "Headscale domain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "Headscale needs a domain name."
+        
+        # Show existing Headscale domain if available
+        if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+            print_info "Current Headscale domain: $EXISTING_HEADSCALE_DOMAIN"
+            read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
         else
-            read -p "Headscale domain or IP (e.g., headscale.example.com or 192.168.1.10): " HEADSCALE_DOMAIN
+            read -p "Use same domain ($DOMAIN) for Headscale? [Y/n]: " same_domain
         fi
+        
+        if [[ "$same_domain" =~ ^[Nn]$ ]]; then
+            if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+                read -p "Enter Headscale domain [$EXISTING_HEADSCALE_DOMAIN]: " HEADSCALE_DOMAIN
+                HEADSCALE_DOMAIN=${HEADSCALE_DOMAIN:-$EXISTING_HEADSCALE_DOMAIN}
+            else
+                read -p "Enter Headscale domain (e.g., headscale.example.com): " HEADSCALE_DOMAIN
+            fi
+        else
+            HEADSCALE_DOMAIN="$DOMAIN"
+        fi
+    else
+        echo "Headscale needs to be accessible from remote locations."
+        
+        # Show existing Headscale domain if available
+        if [ -n "$EXISTING_HEADSCALE_DOMAIN" ]; then
+            print_info "Current Headscale domain/IP: $EXISTING_HEADSCALE_DOMAIN"
+            read -p "Enter Headscale domain or IP [$EXISTING_HEADSCALE_DOMAIN]: " HEADSCALE_DOMAIN
+            HEADSCALE_DOMAIN=${HEADSCALE_DOMAIN:-$EXISTING_HEADSCALE_DOMAIN}
+        else
+            read -p "Enter Headscale domain or IP (e.g., headscale.example.com or 1.2.3.4): " HEADSCALE_DOMAIN
+        fi
+        
+        while [ -z "$HEADSCALE_DOMAIN" ]; do
+            print_error "Headscale domain/IP cannot be empty"
+            read -p "Enter Headscale domain or IP: " HEADSCALE_DOMAIN
+        done
     fi
     
-    while [ -z "$HEADSCALE_DOMAIN" ]; do
-        print_error "Headscale domain/IP cannot be empty"
-        read -p "Headscale domain or IP: " HEADSCALE_DOMAIN
-    done
+    echo ""
+    # Show existing Headscale port if available
+    if [ -n "$EXISTING_HEADSCALE_PORT" ]; then
+        read -p "Headscale port [$EXISTING_HEADSCALE_PORT]: " HEADSCALE_PORT
+        HEADSCALE_PORT=${HEADSCALE_PORT:-$EXISTING_HEADSCALE_PORT}
+    else
+        read -p "Headscale port [8080]: " HEADSCALE_PORT
+        HEADSCALE_PORT=${HEADSCALE_PORT:-8080}
+    fi
     
-    print_success "Headscale domain configured: $HEADSCALE_DOMAIN"
-    
-    # Headscale UI Option
+    # NEW: Headscale UI Option
     echo ""
     echo "Do you want to enable Headscale Web Admin UI?"
     echo "  • Manage users and machines via web interface"
     echo "  • Configure routes and ACLs visually"
     echo "  • Monitor network status in real-time"
-    if [ "$USE_TRAEFIK" = true ]; then
-        echo "  • Access at: https://$HEADSCALE_DOMAIN/web/"
-    elif [ "$USE_NGINX" = true ]; then
-        echo "  • Access at: http://$HEADSCALE_DOMAIN/web/"
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "  • Access at: https://$DOMAIN/web/"
     else
-        echo "  • Access at: http://$HEADSCALE_DOMAIN:8081/web/"
+        echo "  • Access at: http://localhost:$HTTP_PORT/web/"
     fi
     echo ""
     read -p "Enable Headscale Web Admin UI? [Y/n]: " use_headscale_ui_choice
     
     if [[ ! "$use_headscale_ui_choice" =~ ^[Nn]$ ]]; then
         USE_HEADSCALE_UI=true
-        print_success "Headscale UI enabled"
+        
+        # Configure Headscale UI port
+        echo ""
+        echo "Configure Headscale UI port (default: 3000)"
+        echo "Change this if port 3000 is already in use on your system."
+        
+        if [ -n "$EXISTING_HEADSCALE_UI_PORT" ]; then
+            read -p "Headscale UI port [$EXISTING_HEADSCALE_UI_PORT]: " HEADSCALE_UI_PORT
+            HEADSCALE_UI_PORT=${HEADSCALE_UI_PORT:-$EXISTING_HEADSCALE_UI_PORT}
+        else
+            read -p "Headscale UI port [3000]: " HEADSCALE_UI_PORT
+            HEADSCALE_UI_PORT=${HEADSCALE_UI_PORT:-3000}
+        fi
+        
+        # Check for existing credentials
+        CRED_FILE="config/headscale/.credentials"
+        
+        if [ -f "$CRED_FILE" ]; then
+            print_warning "Found existing Headscale UI credentials"
+            echo "Do you want to:"
+            echo "1) Keep existing credentials (recommended)"
+            echo "2) Generate new credentials (will require UI reconfiguration)"
+            read -p "Choice [1-2]: " cred_choice
+            
+            if [ "$cred_choice" = "1" ]; then
+                # Load existing credentials
+                source "$CRED_FILE"
+                HEADSCALE_UI_USER=${HEADSCALE_UI_USER:-admin}
+                HEADSCALE_UI_PASSWORD=${HEADSCALE_UI_PASSWORD}
+                print_success "Using existing credentials"
+            else
+                # Generate new credentials
+                HEADSCALE_UI_USER=${LOGIN_USER}
+                HEADSCALE_UI_PASSWORD=$(generate_password)
+                print_warning "New credentials generated"
+            fi
+        else
+            # First time setup
+            echo ""
+            echo "Generating Headscale UI credentials..."
+            HEADSCALE_UI_USER=${LOGIN_USER}
+            HEADSCALE_UI_PASSWORD=$(generate_password)
+            print_success "Credentials generated"
+        fi
+        
+        print_success "Headscale UI enabled on port $HEADSCALE_UI_PORT"
     else
         USE_HEADSCALE_UI=false
         print_info "Headscale UI disabled"
     fi
     
-    print_success "Headscale configured: $HEADSCALE_DOMAIN"
+    print_success "Headscale enabled: $HEADSCALE_DOMAIN:$HEADSCALE_PORT"
 else
     USE_HEADSCALE=false
     USE_HEADSCALE_UI=false
@@ -342,70 +370,9 @@ fi
 echo ""
 sleep 1
 
-# Step 5: Port Configuration
-clear
-print_header "[5/8] Port Configuration"
-echo "Configure ports for services."
-echo "You can use defaults or change them to avoid conflicts."
-echo ""
-
-# Barcode Central HTTP Port
-if [ -n "$EXISTING_HTTP_PORT" ]; then
-    read -p "Barcode Central HTTP port [$EXISTING_HTTP_PORT]: " HTTP_PORT
-    HTTP_PORT=${HTTP_PORT:-$EXISTING_HTTP_PORT}
-else
-    read -p "Barcode Central HTTP port [5000]: " HTTP_PORT
-    HTTP_PORT=${HTTP_PORT:-5000}
-fi
-print_success "Barcode Central port: $HTTP_PORT"
-
-# Headscale ports (if enabled and using nginx or no reverse proxy)
-if [ "$USE_HEADSCALE" = true ]; then
-    if [ "$USE_NGINX" = true ] || [ "$REVERSE_PROXY" = "none" ]; then
-        echo ""
-        print_info "Headscale port configuration (for nginx/manual access)"
-        
-        # Headscale HTTP Port
-        if [ -n "$EXISTING_HEADSCALE_EXTERNAL_HTTP" ]; then
-            read -p "Headscale HTTP port [$EXISTING_HEADSCALE_EXTERNAL_HTTP]: " HEADSCALE_EXTERNAL_HTTP
-            HEADSCALE_EXTERNAL_HTTP=${HEADSCALE_EXTERNAL_HTTP:-$EXISTING_HEADSCALE_EXTERNAL_HTTP}
-        else
-            read -p "Headscale HTTP port [8080]: " HEADSCALE_EXTERNAL_HTTP
-            HEADSCALE_EXTERNAL_HTTP=${HEADSCALE_EXTERNAL_HTTP:-8080}
-        fi
-        print_success "Headscale HTTP port: $HEADSCALE_EXTERNAL_HTTP"
-        
-        # Headscale UI Port (if enabled)
-        if [ "$USE_HEADSCALE_UI" = true ]; then
-            if [ -n "$EXISTING_HEADSCALE_UI_EXTERNAL" ]; then
-                read -p "Headscale UI port [$EXISTING_HEADSCALE_UI_EXTERNAL]: " HEADSCALE_UI_EXTERNAL
-                HEADSCALE_UI_EXTERNAL=${HEADSCALE_UI_EXTERNAL:-$EXISTING_HEADSCALE_UI_EXTERNAL}
-            else
-                read -p "Headscale UI port [8081]: " HEADSCALE_UI_EXTERNAL
-                HEADSCALE_UI_EXTERNAL=${HEADSCALE_UI_EXTERNAL:-8081}
-            fi
-            print_success "Headscale UI port: $HEADSCALE_UI_EXTERNAL"
-        fi
-    fi
-    
-    # WireGuard Port (always prompt if headscale enabled)
-    echo ""
-    if [ -n "$EXISTING_HEADSCALE_WIREGUARD_PORT" ]; then
-        read -p "WireGuard port [$EXISTING_HEADSCALE_WIREGUARD_PORT]: " HEADSCALE_WIREGUARD_PORT
-        HEADSCALE_WIREGUARD_PORT=${HEADSCALE_WIREGUARD_PORT:-$EXISTING_HEADSCALE_WIREGUARD_PORT}
-    else
-        read -p "WireGuard port [41641]: " HEADSCALE_WIREGUARD_PORT
-        HEADSCALE_WIREGUARD_PORT=${HEADSCALE_WIREGUARD_PORT:-41641}
-    fi
-    print_success "WireGuard port: $HEADSCALE_WIREGUARD_PORT"
-fi
-
-echo ""
-sleep 1
-
 # Step 6: Application Credentials
 clear
-print_header "[6/8] Application Credentials"
+print_header "[5/7] Application Credentials"
 echo "Configure admin access for Barcode Central."
 echo ""
 
@@ -495,20 +462,38 @@ else
     print_success "Secret key generated"
 fi
 
-# Headscale UI credentials (if enabled)
-if [ "$USE_HEADSCALE_UI" = true ]; then
+echo ""
+sleep 1
+
+# Step 7: Port Configuration
+clear
+print_header "[6/7] Port Configuration"
+
+if [ "$USE_TRAEFIK" = false ]; then
+    echo "Configure the HTTP port for the application."
     echo ""
-    print_info "Headscale UI will use the same credentials as Barcode Central"
-    HEADSCALE_UI_USER="$LOGIN_USER"
-    HEADSCALE_UI_PASSWORD="$LOGIN_PASSWORD"
+    
+    # Show existing port if available
+    if [ -n "$EXISTING_HTTP_PORT" ]; then
+        read -p "HTTP port [$EXISTING_HTTP_PORT]: " HTTP_PORT
+        HTTP_PORT=${HTTP_PORT:-$EXISTING_HTTP_PORT}
+    else
+        read -p "HTTP port [5000]: " HTTP_PORT
+        HTTP_PORT=${HTTP_PORT:-5000}
+    fi
+    
+    print_success "Application will be accessible on port $HTTP_PORT"
+else
+    print_info "Traefik will handle ports 80 (HTTP) and 443 (HTTPS)"
+    HTTP_PORT="5000"  # Internal port
 fi
 
 echo ""
 sleep 1
 
-# Step 7: Review Configuration
+# Step 8: Review Configuration
 clear
-print_header "[7/8] Review Configuration"
+print_header "[7/7] Review Configuration"
 echo "Please review your configuration:"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -518,11 +503,10 @@ echo "Admin Password:     ${LOGIN_PASSWORD:0:4}****${LOGIN_PASSWORD: -4}"
 
 if [ "$EXTERNAL_ACCESS" = true ]; then
     echo ""
-    echo "Barcode Central:"
+    echo "External Access:"
     echo "  Domain:           $DOMAIN"
-    echo "  Port:             $HTTP_PORT"
-    echo "  Reverse Proxy:    $REVERSE_PROXY"
     if [ "$USE_TRAEFIK" = true ]; then
+        echo "  Traefik:          Enabled"
         if [ "$USE_SSL" = true ]; then
             echo "  SSL:              Enabled (Let's Encrypt)"
             echo "  SSL Email:        $ACME_EMAIL"
@@ -531,11 +515,9 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
             echo "  SSL:              Disabled"
             echo "  Access URL:       http://$DOMAIN"
         fi
-    elif [ "$USE_NGINX" = true ]; then
-        echo "  SSL:              Manual setup with certbot"
-        echo "  Access URL:       http://$DOMAIN (HTTPS after certbot)"
     else
-        echo "  Access URL:       http://$DOMAIN:$HTTP_PORT"
+        echo "  Traefik:          Disabled (manual reverse proxy)"
+        echo "  Port:             $HTTP_PORT"
     fi
 else
     echo ""
@@ -548,23 +530,8 @@ if [ "$USE_HEADSCALE" = true ]; then
     echo ""
     echo "Headscale Mesh VPN:"
     echo "  Domain:           $HEADSCALE_DOMAIN"
-    if [ "$USE_NGINX" = true ] || [ "$REVERSE_PROXY" = "none" ]; then
-        echo "  HTTP Port:        $HEADSCALE_EXTERNAL_HTTP"
-        if [ "$USE_HEADSCALE_UI" = true ]; then
-            echo "  UI Port:          $HEADSCALE_UI_EXTERNAL"
-        fi
-    fi
-    echo "  WireGuard Port:   $HEADSCALE_WIREGUARD_PORT/udp"
-    if [ "$USE_HEADSCALE_UI" = true ]; then
-        echo "  UI Enabled:       Yes"
-        if [ "$USE_TRAEFIK" = true ]; then
-            echo "  UI Access:        https://$HEADSCALE_DOMAIN/web/"
-        elif [ "$USE_NGINX" = true ]; then
-            echo "  UI Access:        http://$HEADSCALE_DOMAIN/web/"
-        else
-            echo "  UI Access:        http://$HEADSCALE_DOMAIN:$HEADSCALE_UI_EXTERNAL/web/"
-        fi
-    fi
+    echo "  Port:             $HEADSCALE_PORT"
+    echo "  WireGuard Port:   41641/udp"
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -576,9 +543,9 @@ if [[ "$confirm" =~ ^[Nn]$ ]]; then
     exit 1
 fi
 
-# Step 8: Generate Configuration Files
+# Generate Files
 clear
-print_header "[8/8] Generating Configuration Files"
+print_header "Generating Configuration Files"
 
 # Create .env file
 print_info "Creating .env file..."
@@ -599,6 +566,7 @@ LOGIN_USER=$LOGIN_USER
 LOGIN_PASSWORD=$LOGIN_PASSWORD
 
 # Session
+# Only enable Secure flag if using SSL/HTTPS
 SESSION_COOKIE_SECURE=$([ "$USE_SSL" = true ] && echo "true" || echo "false")
 SESSION_COOKIE_HTTPONLY=true
 SESSION_COOKIE_SAMESITE=Lax
@@ -608,15 +576,14 @@ HTTP_PORT=$HTTP_PORT
 
 EOF
 
-# Add reverse proxy configuration
-if [ "$EXTERNAL_ACCESS" = true ]; then
+# Add Traefik configuration if enabled
+if [ "$USE_TRAEFIK" = true ]; then
     cat >> .env << EOF
 # ============================================================================
-# Reverse Proxy Configuration
+# Traefik Configuration
 # ============================================================================
-REVERSE_PROXY=$REVERSE_PROXY
 DOMAIN=$DOMAIN
-$([ "$USE_SSL" = true ] && echo "ACME_EMAIL=$ACME_EMAIL")
+$([ "$USE_SSL" = true ] && echo "ACME_EMAIL=$ACME_EMAIL" || echo "# SSL disabled")
 
 EOF
 fi
@@ -627,11 +594,10 @@ if [ "$USE_HEADSCALE" = true ]; then
 # ============================================================================
 # Headscale Configuration
 # ============================================================================
-HEADSCALE_ENABLED=true
 HEADSCALE_DOMAIN=$HEADSCALE_DOMAIN
-HEADSCALE_EXTERNAL_HTTP=$HEADSCALE_EXTERNAL_HTTP
-HEADSCALE_WIREGUARD_PORT=$HEADSCALE_WIREGUARD_PORT
-HEADSCALE_SERVER_URL=http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP
+HEADSCALE_PORT=$HEADSCALE_PORT
+HEADSCALE_SERVER_URL=http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
+# TAILSCALE_AUTHKEY will be generated after first deployment
 
 EOF
 
@@ -640,10 +606,10 @@ EOF
         cat >> .env << EOF
 # Headscale UI
 HEADSCALE_UI_ENABLED=true
-HEADSCALE_UI_EXTERNAL=$HEADSCALE_UI_EXTERNAL
+HEADSCALE_UI_PORT=$HEADSCALE_UI_PORT
 HEADSCALE_UI_USER=$HEADSCALE_UI_USER
 HEADSCALE_UI_PASSWORD=$HEADSCALE_UI_PASSWORD
-# HEADSCALE_API_KEY=  # Will be auto-generated after first deployment
+# HEADSCALE_API_KEY=  # Generate with: ./scripts/generate-headscale-api-key.sh
 
 EOF
     fi
@@ -683,25 +649,9 @@ services:
     container_name: barcode-central
     restart: unless-stopped
     
-COMPOSE_EOF
-
-# Add ports based on reverse proxy choice
-if [ "$USE_TRAEFIK" = true ]; then
-    # Traefik: no host port exposure
-    cat >> docker-compose.yml << COMPOSE_EOF
-    # No ports exposed - Traefik accesses via Docker network
-    
-COMPOSE_EOF
-else
-    # Nginx or no reverse proxy: expose to host
-    cat >> docker-compose.yml << COMPOSE_EOF
     ports:
       - "${HTTP_PORT:-5000}:5000"
     
-COMPOSE_EOF
-fi
-
-cat >> docker-compose.yml << 'COMPOSE_EOF'
     env_file:
       - .env
     
@@ -721,32 +671,11 @@ cat >> docker-compose.yml << 'COMPOSE_EOF'
     
     networks:
       - barcode-network
-COMPOSE_EOF
-
-# Add Traefik labels if enabled
-if [ "$USE_TRAEFIK" = true ]; then
-    cat >> docker-compose.yml << COMPOSE_EOF
     
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.barcode.rule=Host(\`${DOMAIN}\`)"
-      - "traefik.http.routers.barcode.entrypoints=websecure"
-      - "traefik.http.routers.barcode.tls=true"
-      - "traefik.http.routers.barcode.tls.certresolver=letsencrypt"
-      - "traefik.http.services.barcode.loadbalancer.server.port=5000"
-      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
-      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
-      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
-      - "traefik.http.routers.barcode.middlewares=security-headers"
-COMPOSE_EOF
-fi
+      - "com.barcodecentral.service=app"
 
-# Add Traefik service if enabled
-if [ "$USE_TRAEFIK" = true ]; then
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
-
-  # Traefik Reverse Proxy
+  # Traefik Reverse Proxy (Optional)
   traefik:
     image: traefik:v2.10
     container_name: traefik
@@ -755,10 +684,6 @@ if [ "$USE_TRAEFIK" = true ]; then
     profiles:
       - traefik
     
-COMPOSE_EOF
-
-    if [ "$USE_SSL" = true ]; then
-        cat >> docker-compose.yml << COMPOSE_EOF
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -772,31 +697,10 @@ COMPOSE_EOF
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--log.level=INFO"
       - "--accesslog=true"
-COMPOSE_EOF
-    else
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--log.level=INFO"
-      - "--accesslog=true"
-COMPOSE_EOF
-    fi
-
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
     
     ports:
       - "80:80"
-COMPOSE_EOF
-
-    if [ "$USE_SSL" = true ]; then
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
       - "443:443"
-COMPOSE_EOF
-    fi
-
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
     
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -805,20 +709,21 @@ COMPOSE_EOF
     
     networks:
       - barcode-network
-COMPOSE_EOF
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.barcode.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.barcode.entrypoints=websecure"
+      - "traefik.http.routers.barcode.tls=true"
+      - "traefik.http.routers.barcode.tls.certresolver=letsencrypt"
+      - "traefik.http.services.barcode.loadbalancer.server.port=5000"
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.routers.barcode.middlewares=security-headers"
 
-    if [ "$USE_HEADSCALE" = true ]; then
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
-      - headscale-network
-COMPOSE_EOF
-    fi
-fi
-
-# Add Headscale services if enabled
-if [ "$USE_HEADSCALE" = true ]; then
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
-
-  # Headscale Coordination Server
+  # Headscale Coordination Server (Optional)
   headscale:
     image: headscale/headscale:latest
     container_name: headscale
@@ -833,43 +738,18 @@ if [ "$USE_HEADSCALE" = true ]; then
     tmpfs:
       - /var/run/headscale
     
-COMPOSE_EOF
-
-    # Headscale port exposure based on reverse proxy choice
-    if [ "$USE_TRAEFIK" = true ]; then
-        # Traefik: only WireGuard exposed
-        cat >> docker-compose.yml << COMPOSE_EOF
     ports:
-      - "${HEADSCALE_WIREGUARD_PORT:-41641}:41641/udp"
-    
-COMPOSE_EOF
-    else
-        # Nginx or none: expose HTTP and WireGuard
-        cat >> docker-compose.yml << COMPOSE_EOF
-    ports:
-      - "0.0.0.0:\${HEADSCALE_EXTERNAL_HTTP:-8080}:8080"
+      - "0.0.0.0:${HEADSCALE_PORT:-8080}:8080"
       - "0.0.0.0:9090:9090"
-      - "\${HEADSCALE_WIREGUARD_PORT:-41641}:41641/udp"
+      - "41641:41641/udp"
     
-COMPOSE_EOF
-    fi
-
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
     volumes:
       - ./config/headscale:/etc/headscale:ro
       - ./data/headscale:/var/lib/headscale
     
     networks:
-      - headscale-network
-COMPOSE_EOF
-
-    if [ "$USE_TRAEFIK" = true ]; then
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
       - barcode-network
-COMPOSE_EOF
-    fi
-
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
+      - headscale-network
     
     healthcheck:
       test: ["CMD", "headscale", "health"]
@@ -877,28 +757,8 @@ COMPOSE_EOF
       timeout: 10s
       retries: 3
       start_period: 10s
-COMPOSE_EOF
 
-    # Add Traefik labels for Headscale if Traefik is enabled
-    if [ "$USE_TRAEFIK" = true ]; then
-        cat >> docker-compose.yml << COMPOSE_EOF
-    
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.headscale.rule=Host(\`${HEADSCALE_DOMAIN}\`)"
-      - "traefik.http.routers.headscale.entrypoints=websecure"
-      - "traefik.http.routers.headscale.tls=true"
-      - "traefik.http.routers.headscale.tls.certresolver=letsencrypt"
-      - "traefik.http.services.headscale.loadbalancer.server.port=8080"
-      - "traefik.http.routers.headscale.priority=1"
-COMPOSE_EOF
-    fi
-
-    # Add Headscale UI if enabled
-    if [ "$USE_HEADSCALE_UI" = true ]; then
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
-
-  # Headscale Web Admin UI
+  # Headscale Web Admin UI (Optional)
   headscale-ui:
     image: ghcr.io/gurucomputing/headscale-ui:latest
     container_name: headscale-ui
@@ -916,62 +776,22 @@ COMPOSE_EOF
       - BASIC_AUTH_USER=${HEADSCALE_UI_USER}
       - BASIC_AUTH_PASS=${HEADSCALE_UI_PASSWORD}
     
-COMPOSE_EOF
-
-        # UI port exposure based on reverse proxy choice
-        if [ "$USE_TRAEFIK" = true ]; then
-            # Traefik: no port exposure
-            cat >> docker-compose.yml << 'COMPOSE_EOF'
-    # No ports exposed - Traefik accesses via Docker network
-    
-COMPOSE_EOF
-        else
-            # Nginx or none: expose UI port
-            cat >> docker-compose.yml << COMPOSE_EOF
+    # Expose port for external nginx access (when not using Traefik)
+    # Traefik can access via Docker network, but external nginx needs host port
     ports:
-      - "\${HEADSCALE_UI_EXTERNAL:-8081}:8080"
+      - "${HEADSCALE_UI_PORT:-3000}:3000"
     
-COMPOSE_EOF
-        fi
-
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
     networks:
-      - headscale-network
-COMPOSE_EOF
-
-        if [ "$USE_TRAEFIK" = true ]; then
-            cat >> docker-compose.yml << 'COMPOSE_EOF'
       - barcode-network
-COMPOSE_EOF
-        fi
-
-        cat >> docker-compose.yml << 'COMPOSE_EOF'
+      - headscale-network
     
     depends_on:
       - headscale
-COMPOSE_EOF
-
-        # Add Traefik labels for Headscale UI if Traefik is enabled
-        if [ "$USE_TRAEFIK" = true ]; then
-            cat >> docker-compose.yml << COMPOSE_EOF
     
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.headscale-ui.rule=Host(\`${HEADSCALE_DOMAIN}\`) && PathPrefix(\`/web\`)"
-      - "traefik.http.routers.headscale-ui.entrypoints=websecure"
-      - "traefik.http.routers.headscale-ui.tls=true"
-      - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"
-      - "traefik.http.services.headscale-ui.loadbalancer.server.port=8080"
-      - "traefik.http.routers.headscale-ui.priority=100"
-      - "traefik.http.routers.headscale-ui.middlewares=security-headers"
-COMPOSE_EOF
-        fi
-    fi
+      - "com.barcodecentral.service=headscale-ui"
 
-    # Add Tailscale client
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
-
-  # Tailscale Client (for mesh network)
+  # Tailscale Client (Optional - for mesh network)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: barcode-central-tailscale
@@ -1003,28 +823,39 @@ COMPOSE_EOF
     
     depends_on:
       - headscale
-COMPOSE_EOF
-fi
-
-# Add networks section
-cat >> docker-compose.yml << 'COMPOSE_EOF'
 
 networks:
   barcode-network:
     name: barcode-network
     driver: bridge
-COMPOSE_EOF
-
-if [ "$USE_HEADSCALE" = true ]; then
-    cat >> docker-compose.yml << 'COMPOSE_EOF'
   
   headscale-network:
     name: headscale-network
     driver: bridge
+
 COMPOSE_EOF
-fi
 
 print_success "Created docker-compose.yml"
+
+# Add Traefik labels to headscale-ui if both Traefik and Headscale UI are enabled
+if [ "$USE_TRAEFIK" = true ] && [ "$USE_HEADSCALE_UI" = true ]; then
+    print_info "Adding Traefik labels for Headscale UI..."
+    
+    # Use sed to insert Traefik labels after the headscale-ui service label
+    # Priority is set higher than main app to ensure /web is matched first
+    sed -i '/com.barcodecentral.service=headscale-ui/a\
+      # Traefik labels for Headscale UI\
+      - "traefik.enable=true"\
+      - "traefik.http.routers.headscale-ui.rule=Host(`${DOMAIN}`) && PathPrefix(`/web`)"\
+      - "traefik.http.routers.headscale-ui.entrypoints=websecure"\
+      - "traefik.http.routers.headscale-ui.tls=true"\
+      - "traefik.http.routers.headscale-ui.tls.certresolver=letsencrypt"\
+      - "traefik.http.routers.headscale-ui.priority=100"\
+      - "traefik.http.services.headscale-ui.loadbalancer.server.port=3000"\
+      - "traefik.http.routers.headscale-ui.middlewares=security-headers"' docker-compose.yml
+    
+    print_success "Added Traefik labels for Headscale UI"
+fi
 
 # Create required directories
 print_info "Creating required directories..."
@@ -1033,40 +864,38 @@ mkdir -p config/headscale config/nginx config/traefik
 mkdir -p data/headscale data/letsencrypt data/tailscale
 touch history.json printers.json
 
-# Initialize JSON files if empty
-if [ ! -s history.json ]; then
-    echo "[]" > history.json
-fi
-
-if [ ! -s printers.json ]; then
-    echo "{\"printers\": []}" > printers.json
-fi
-
-# Create Headscale configuration if enabled
 if [ "$USE_HEADSCALE" = true ]; then
+    # Create Headscale configuration
     if [ ! -f config/headscale/config.yaml ]; then
         print_info "Downloading latest Headscale configuration template..."
         
+        # Download the latest config example from GitHub
         if curl -sSL https://raw.githubusercontent.com/juanfont/headscale/main/config-example.yaml -o config/headscale/config.yaml; then
             print_success "Downloaded latest config template"
             
             print_info "Customizing configuration for your setup..."
             
-            # Customize required fields using sed
-            sed -i "s|^server_url:.*|server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP|" config/headscale/config.yaml
+            # Customize only the required fields using sed
+            sed -i "s|^server_url:.*|server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT|" config/headscale/config.yaml
             sed -i "s|^listen_addr:.*|listen_addr: 0.0.0.0:8080|" config/headscale/config.yaml
             sed -i "s|^metrics_listen_addr:.*|metrics_listen_addr: 0.0.0.0:9090|" config/headscale/config.yaml
             sed -i "s|^grpc_listen_addr:.*|grpc_listen_addr: 0.0.0.0:50443|" config/headscale/config.yaml
+            
+            # Update unix_socket path for container
             sed -i "s|^unix_socket:.*|unix_socket: /var/run/headscale/headscale.sock|" config/headscale/config.yaml
+            
+            # Update base_domain for DNS
             sed -i "s|^  base_domain:.*|  base_domain: headscale.local|" config/headscale/config.yaml
-            sed -i 's|^  path: ""|  path: /etc/headscale/acl.json|' config/headscale/config.yaml
+            
+            # Set policy path
+            sed -i "s|^  path: \"\"|  path: /etc/headscale/acl.json|" config/headscale/config.yaml
             
             print_success "Customized Headscale configuration"
         else
-            print_warning "Failed to download config template, creating basic config..."
-            # Fallback to basic config
+            print_error "Failed to download config template, creating basic config..."
+            # Fallback to basic config if download fails
             cat > config/headscale/config.yaml << HEADSCALE_EOF
-server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP
+server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_PORT
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
 grpc_listen_addr: 0.0.0.0:50443
@@ -1146,18 +975,35 @@ ACL_EOF
     else
         print_info "Headscale ACL policy already exists, skipping"
     fi
+    
+    # Save Headscale UI credentials
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        print_info "Saving Headscale UI credentials..."
+        cat > config/headscale/.credentials << CRED_EOF
+# Headscale UI Credentials
+# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# DO NOT DELETE - Required for Headscale UI authentication
+
+HEADSCALE_UI_USER=$HEADSCALE_UI_USER
+HEADSCALE_UI_PASSWORD=$HEADSCALE_UI_PASSWORD
+# HEADSCALE_API_KEY will be added after first deployment
+# Run: ./scripts/generate-headscale-api-key.sh
+CRED_EOF
+        chmod 600 config/headscale/.credentials
+        print_success "Saved Headscale UI credentials"
+    fi
 fi
 
-# Generate nginx configuration files if using nginx
-if [ "$USE_NGINX" = true ]; then
-    print_info "Generating nginx configuration files..."
-    
-    # Barcode Central nginx config
+print_success "Created all required directories"
+
+# Generate nginx.conf if not using Traefik
+if [ "$EXTERNAL_ACCESS" = true ] && [ "$USE_TRAEFIK" = false ]; then
+    print_info "Generating nginx configuration for manual reverse proxy..."
     cat > config/nginx/barcode-central.conf << NGINX_EOF
 # Nginx configuration for Barcode Central
 # Generated by setup.sh on $(date)
 
-# Upstream server
+# Upstream servers
 upstream barcode_central {
     server localhost:$HTTP_PORT;
 }
@@ -1194,61 +1040,23 @@ server {
         proxy_pass http://barcode_central;
         access_log off;
     }
-}
-
-# Logging
-access_log /var/log/nginx/barcode-central-access.log;
-error_log /var/log/nginx/barcode-central-error.log;
 NGINX_EOF
-    print_success "Created config/nginx/barcode-central.conf"
+
+    # Add Headscale UI location if enabled
+    if [ "$USE_HEADSCALE_UI" = true ]; then
+        cat >> config/nginx/barcode-central.conf << NGINX_UI_EOF
     
-    # Headscale nginx config (if enabled)
-    if [ "$USE_HEADSCALE" = true ]; then
-        cat > config/nginx/headscale.conf << NGINX_EOF
-# Nginx configuration for Headscale
-# Generated by setup.sh on $(date)
-
-# Upstream definitions
-upstream headscale_backend {
-    server localhost:$HEADSCALE_EXTERNAL_HTTP;
-}
-
-NGINX_EOF
-
-        if [ "$USE_HEADSCALE_UI" = true ]; then
-            cat >> config/nginx/headscale.conf << NGINX_EOF
-upstream headscale_ui_backend {
-    server localhost:$HEADSCALE_UI_EXTERNAL;
-}
-
-NGINX_EOF
-        fi
-
-        cat >> config/nginx/headscale.conf << 'NGINX_EOF'
-# Main server block
-server {
-    listen 80;
-NGINX_EOF
-
-        cat >> config/nginx/headscale.conf << NGINX_EOF
-    server_name $HEADSCALE_DOMAIN;
-    
-NGINX_EOF
-
-        if [ "$USE_HEADSCALE_UI" = true ]; then
-            cat >> config/nginx/headscale.conf << 'NGINX_EOF'
-    # Headscale UI at /web path
-    location /web {
-        proxy_pass http://headscale_ui_backend/web/;
+    # Headscale Web Admin UI (served at /web per SvelteKit base path)
+    location /web/ {
+        proxy_pass http://localhost:$HEADSCALE_UI_PORT/web/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # WebSocket support
         proxy_http_version 1.1;
-        
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket support for UI
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         
         # Timeouts
@@ -1256,49 +1064,28 @@ NGINX_EOF
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
     }
-    
-NGINX_EOF
-        fi
+NGINX_UI_EOF
+    fi
 
-        cat >> config/nginx/headscale.conf << 'NGINX_EOF'
-    # Headscale API at root
-    location / {
-        proxy_pass http://headscale_backend;
-        proxy_http_version 1.1;
-        
-        proxy_set_header Host $server_name;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket support for Headscale
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        proxy_buffering off;
-        proxy_redirect http:// https://;
-        
-        # Security headers
-        add_header Strict-Transport-Security "max-age=15552000; includeSubDomains" always;
-    }
+    cat >> config/nginx/barcode-central.conf << NGINX_FOOTER_EOF
 }
 
 # Logging
-access_log /var/log/nginx/headscale-access.log;
-error_log /var/log/nginx/headscale-error.log;
-NGINX_EOF
-        print_success "Created config/nginx/headscale.conf"
-    fi
+access_log /var/log/nginx/barcode-central-access.log;
+error_log /var/log/nginx/barcode-central-error.log;
+NGINX_FOOTER_EOF
+    print_success "Created nginx configuration: config/nginx/barcode-central.conf"
 fi
 
 # Set permissions and ownership
-chmod 755 logs previews 2>/dev/null || true
+# The Docker container runs as appuser (UID 1000), so we need to ensure
+# the mounted directories are writable by this user
+chmod 755 logs previews
 chown -R 1000:1000 logs previews 2>/dev/null || true
 chmod 644 history.json printers.json 2>/dev/null || true
 chown 1000:1000 history.json printers.json 2>/dev/null || true
 
 print_success "Set file permissions and ownership"
-print_success "Created all required directories"
 
 # Final instructions
 clear
@@ -1329,108 +1116,77 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
     echo "1. Configure DNS:"
     SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "your-server-ip")
     echo "   Create A record: $DOMAIN → $SERVER_IP"
-    if [ "$USE_HEADSCALE" = true ]; then
+    if [ "$USE_HEADSCALE" = true ] && [ "$HEADSCALE_DOMAIN" != "$DOMAIN" ]; then
         echo "   Create A record: $HEADSCALE_DOMAIN → $SERVER_IP"
     fi
     echo ""
 fi
 
 # Firewall configuration
-STEP_NUM=2
-if [ "$EXTERNAL_ACCESS" = false ]; then
-    STEP_NUM=1
-fi
-
-echo "$STEP_NUM. Configure firewall (IMPORTANT - Manual step required):"
-echo "   The following ports need to be opened:"
-echo ""
+echo "2. Configure firewall:"
+echo "   Run: ./scripts/configure-firewall.sh"
+echo "   Or manually open ports:"
 if [ "$USE_TRAEFIK" = true ]; then
-    echo "   sudo ufw allow 80/tcp      # HTTP"
+    echo "   - 80/tcp (HTTP)"
     if [ "$USE_SSL" = true ]; then
-        echo "   sudo ufw allow 443/tcp     # HTTPS"
+        echo "   - 443/tcp (HTTPS)"
     fi
-elif [ "$USE_NGINX" = true ]; then
-    echo "   sudo ufw allow 80/tcp      # HTTP"
-    echo "   sudo ufw allow 443/tcp     # HTTPS (after certbot)"
 else
-    echo "   sudo ufw allow $HTTP_PORT/tcp   # Barcode Central"
+    echo "   - $HTTP_PORT/tcp (HTTP)"
 fi
-
 if [ "$USE_HEADSCALE" = true ]; then
-    echo "   sudo ufw allow $HEADSCALE_WIREGUARD_PORT/udp   # WireGuard"
-    if [ "$REVERSE_PROXY" = "none" ]; then
-        echo "   sudo ufw allow $HEADSCALE_EXTERNAL_HTTP/tcp   # Headscale API"
-        if [ "$USE_HEADSCALE_UI" = true ]; then
-            echo "   sudo ufw allow $HEADSCALE_UI_EXTERNAL/tcp   # Headscale UI"
-        fi
-    fi
+    echo "   - $HEADSCALE_PORT/tcp (Headscale API)"
+    echo "   - 41641/udp (WireGuard)"
 fi
-echo "   sudo ufw enable"
-echo ""
-print_warning "NOTE: Application ports are NOT exposed externally when using nginx"
-print_warning "      (nginx accesses services via localhost)"
 echo ""
 
-# Nginx deployment instructions
-((STEP_NUM++))
-if [ "$USE_NGINX" = true ]; then
-    echo "$STEP_NUM. Deploy nginx configuration:"
+# Nginx configuration (if not using Traefik)
+if [ "$EXTERNAL_ACCESS" = true ] && [ "$USE_TRAEFIK" = false ]; then
+    echo "3. Deploy nginx configuration:"
     echo "   sudo cp config/nginx/barcode-central.conf /etc/nginx/sites-available/barcode-central"
     echo "   sudo ln -s /etc/nginx/sites-available/barcode-central /etc/nginx/sites-enabled/"
-    if [ "$USE_HEADSCALE" = true ]; then
-        echo "   sudo cp config/nginx/headscale.conf /etc/nginx/sites-available/headscale"
-        echo "   sudo ln -s /etc/nginx/sites-available/headscale /etc/nginx/sites-enabled/"
-    fi
     echo "   sudo nginx -t"
     echo "   sudo systemctl reload nginx"
     echo ""
-    
-    ((STEP_NUM++))
-    echo "$STEP_NUM. Setup SSL with certbot:"
-    echo "   sudo apt-get install certbot python3-certbot-nginx"
-    echo "   sudo certbot --nginx -d $DOMAIN"
-    if [ "$USE_HEADSCALE" = true ]; then
-        echo "   sudo certbot --nginx -d $HEADSCALE_DOMAIN"
-    fi
-    echo "   sudo certbot renew --dry-run  # Test renewal"
+    echo "4. Start the application:"
+    echo "   docker compose up -d"
     echo ""
-    
-    ((STEP_NUM++))
+    echo "5. Check status:"
+    echo "   docker compose ps"
+    echo "   docker compose logs -f"
+    echo ""
+else
+    echo "3. Start the application:"
+    echo "   docker compose up -d"
+    echo ""
+    echo "4. Check status:"
+    echo "   docker compose ps"
+    echo "   docker compose logs -f"
+    echo ""
 fi
-
-echo "$STEP_NUM. Start the application:"
-echo "   docker compose up -d"
-echo ""
-
-((STEP_NUM++))
-echo "$STEP_NUM. Check status:"
-echo "   docker compose ps"
-echo "   docker compose logs -f"
-echo ""
 
 # Headscale-specific instructions
 if [ "$USE_HEADSCALE" = true ]; then
-    ((STEP_NUM++))
-    echo "$STEP_NUM. Setup Headscale mesh network:"
+    if [ "$EXTERNAL_ACCESS" = true ] && [ "$USE_TRAEFIK" = false ]; then
+        echo "6. Setup Headscale mesh network:"
+    else
+        echo "5. Setup Headscale mesh network:"
+    fi
     
     if [ "$USE_HEADSCALE_UI" = true ]; then
-        echo "   a) Wait for services to start (30 seconds)"
-        echo "      sleep 30"
+        echo "   a) Generate Headscale API key for UI:"
+        echo "      ./scripts/generate-headscale-api-key.sh"
         echo ""
-        echo "   b) Generate Headscale API key (automatic):"
-        echo "      API_KEY=\$(docker exec headscale headscale apikeys create --expiration 90d | grep -oP '(?<=Created API key: ).*')"
-        echo "      echo \"HEADSCALE_API_KEY=\$API_KEY\" >> .env"
+        echo "   b) Restart Headscale UI:"
         echo "      docker compose restart headscale-ui"
         echo ""
         echo "   c) Access Headscale UI:"
         if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
-            echo "      https://$HEADSCALE_DOMAIN/web/"
+            echo "      https://$DOMAIN/web/"
         elif [ "$USE_TRAEFIK" = true ]; then
-            echo "      http://$HEADSCALE_DOMAIN/web/"
-        elif [ "$USE_NGINX" = true ]; then
-            echo "      http://$HEADSCALE_DOMAIN/web/ (https after certbot)"
+            echo "      http://$DOMAIN/web/"
         else
-            echo "      http://$HEADSCALE_DOMAIN:$HEADSCALE_UI_EXTERNAL/web/"
+            echo "      http://$DOMAIN:$HTTP_PORT/web/"
         fi
         echo ""
         echo "   d) Generate pre-auth key (in UI or via CLI):"
@@ -1459,34 +1215,30 @@ if [ "$USE_HEADSCALE" = true ]; then
         echo ""
         echo "   d) Verify connectivity:"
     fi
-    echo "      docker exec -it barcode-central-tailscale tailscale ping <raspberry-pi-hostname>"
+    echo "      docker exec -it barcode-central ping <raspberry-pi-tailscale-ip>"
+    echo "      docker exec -it barcode-central ping <printer-ip>"
     echo ""
 fi
 
 # Access URL
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [ "$USE_TRAEFIK" = true ]; then
     if [ "$USE_SSL" = true ]; then
         echo "Access your application at: https://$DOMAIN"
     else
         echo "Access your application at: http://$DOMAIN"
     fi
-elif [ "$USE_NGINX" = true ]; then
-    echo "Access your application at: http://$DOMAIN"
-    echo "(https://$DOMAIN after certbot setup)"
-elif [ "$EXTERNAL_ACCESS" = true ]; then
-    echo "Access your application at: http://$DOMAIN:$HTTP_PORT"
 else
-    echo "Access your application at: http://localhost:$HTTP_PORT"
+    if [ "$EXTERNAL_ACCESS" = true ]; then
+        echo "Access your application at: http://$DOMAIN:$HTTP_PORT"
+    else
+        echo "Access your application at: http://localhost:$HTTP_PORT"
+    fi
 fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 echo ""
 print_info "For detailed documentation, see:"
 echo "  - QUICKSTART.md"
 echo "  - PRODUCTION_DEPLOYMENT_GUIDE.md"
-echo "  - SETUP_REFACTORING_ARCHITECTURE.md"
 if [ "$USE_HEADSCALE" = true ]; then
     echo "  - RASPBERRY_PI_SETUP.md"
 fi
