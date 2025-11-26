@@ -23,7 +23,6 @@ HTTP_PORT="5000"
 HTTPS_PORT="443"
 HEADSCALE_EXTERNAL_HTTP="8080"
 HEADSCALE_UI_EXTERNAL="8081"
-HEADSCALE_WIREGUARD_PORT="41641"
 REVERSE_PROXY=""
 USE_TRAEFIK=false
 USE_NGINX=false
@@ -82,7 +81,6 @@ load_existing_config() {
         EXISTING_HEADSCALE_DOMAIN=$(grep "^HEADSCALE_DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_HEADSCALE_EXTERNAL_HTTP=$(grep "^HEADSCALE_EXTERNAL_HTTP=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_HEADSCALE_UI_EXTERNAL=$(grep "^HEADSCALE_UI_EXTERNAL=" .env 2>/dev/null | cut -d'=' -f2)
-        EXISTING_HEADSCALE_WIREGUARD_PORT=$(grep "^HEADSCALE_WIREGUARD_PORT=" .env 2>/dev/null | cut -d'=' -f2)
         EXISTING_REVERSE_PROXY=$(grep "^REVERSE_PROXY=" .env 2>/dev/null | cut -d'=' -f2)
         
         return 0
@@ -175,9 +173,10 @@ if [ "$EXTERNAL_ACCESS" = true ]; then
     echo "   • Automatic HTTPS certificates"
     echo "   • Container-based routing via Docker networks"
     echo "   • No port exposure except 80/443"
-    echo "   • Recommended for Docker deployments"
+    echo "   • Recommended for Docker deployments where there are no other systems sharing port 80/443"
     echo ""
     echo "2) Nginx (Host-based, manual SSL with certbot)"
+    echo "   • Will create a sample nginx configuration for further setup with your existing Nginx installation"
     echo "   • Traditional nginx on host system"
     echo "   • Manual SSL setup with certbot"
     echo "   • Services exposed to localhost for nginx access"
@@ -273,7 +272,7 @@ echo "Headscale is a self-hosted mesh VPN that allows you to:"
 echo "  • Connect printers on remote networks securely"
 echo "  • Access printers at different physical locations"
 echo "  • Create a secure mesh network for distributed printing"
-echo "  • Use Raspberry Pis as print servers at remote sites"
+echo "  • Use a Raspberry Pi or another system that supports Tailscale running on the printer's LAN to give access to your Barcode Central server"
 echo ""
 echo "Choose 'yes' if you have printers at multiple locations."
 echo "Choose 'no' if all printers are on the same network as this server."
@@ -387,17 +386,6 @@ if [ "$USE_HEADSCALE" = true ]; then
             print_success "Headscale UI port: $HEADSCALE_UI_EXTERNAL"
         fi
     fi
-    
-    # WireGuard Port (always prompt if headscale enabled)
-    echo ""
-    if [ -n "$EXISTING_HEADSCALE_WIREGUARD_PORT" ]; then
-        read -p "WireGuard port [$EXISTING_HEADSCALE_WIREGUARD_PORT]: " HEADSCALE_WIREGUARD_PORT
-        HEADSCALE_WIREGUARD_PORT=${HEADSCALE_WIREGUARD_PORT:-$EXISTING_HEADSCALE_WIREGUARD_PORT}
-    else
-        read -p "WireGuard port [41641]: " HEADSCALE_WIREGUARD_PORT
-        HEADSCALE_WIREGUARD_PORT=${HEADSCALE_WIREGUARD_PORT:-41641}
-    fi
-    print_success "WireGuard port: $HEADSCALE_WIREGUARD_PORT"
 fi
 
 echo ""
@@ -554,7 +542,7 @@ if [ "$USE_HEADSCALE" = true ]; then
             echo "  UI Port:          $HEADSCALE_UI_EXTERNAL"
         fi
     fi
-    echo "  WireGuard Port:   $HEADSCALE_WIREGUARD_PORT/udp"
+    echo "  STUN Port:        3478/udp"
     if [ "$USE_HEADSCALE_UI" = true ]; then
         echo "  UI Enabled:       Yes"
         if [ "$USE_TRAEFIK" = true ]; then
@@ -630,7 +618,6 @@ if [ "$USE_HEADSCALE" = true ]; then
 HEADSCALE_ENABLED=true
 HEADSCALE_DOMAIN=$HEADSCALE_DOMAIN
 HEADSCALE_EXTERNAL_HTTP=$HEADSCALE_EXTERNAL_HTTP
-HEADSCALE_WIREGUARD_PORT=$HEADSCALE_WIREGUARD_PORT
 HEADSCALE_SERVER_URL=http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP
 
 EOF
@@ -837,19 +824,19 @@ COMPOSE_EOF
 
     # Headscale port exposure based on reverse proxy choice
     if [ "$USE_TRAEFIK" = true ]; then
-        # Traefik: only WireGuard exposed
-        cat >> docker-compose.yml << COMPOSE_EOF
+        # Traefik: only STUN exposed for DERP
+        cat >> docker-compose.yml << 'COMPOSE_EOF'
     ports:
-      - "${HEADSCALE_WIREGUARD_PORT:-41641}:41641/udp"
+      - "3478:3478/udp"
     
 COMPOSE_EOF
     else
-        # Nginx or none: expose HTTP and WireGuard
+        # Nginx or none: expose HTTP and STUN
         cat >> docker-compose.yml << COMPOSE_EOF
     ports:
       - "0.0.0.0:\${HEADSCALE_EXTERNAL_HTTP:-8080}:8080"
       - "0.0.0.0:9090:9090"
-      - "\${HEADSCALE_WIREGUARD_PORT:-41641}:41641/udp"
+      - "3478:3478/udp"
     
 COMPOSE_EOF
     fi
@@ -1053,10 +1040,25 @@ if [ "$USE_HEADSCALE" = true ]; then
             print_info "Customizing configuration for your setup..."
             
             # Customize required fields using sed
-            sed -i "s|^server_url:.*|server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP|" config/headscale/config.yaml
+            # Determine correct server_url based on reverse proxy configuration
+            if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
+                HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
+            elif [ "$USE_TRAEFIK" = true ]; then
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+            elif [ "$USE_NGINX" = true ]; then
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+            else
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP"
+            fi
+            
+            sed -i "s|^server_url:.*|server_url: $HEADSCALE_SERVER_URL|" config/headscale/config.yaml
             sed -i "s|^listen_addr:.*|listen_addr: 0.0.0.0:8080|" config/headscale/config.yaml
             sed -i "s|^metrics_listen_addr:.*|metrics_listen_addr: 0.0.0.0:9090|" config/headscale/config.yaml
             sed -i "s|^grpc_listen_addr:.*|grpc_listen_addr: 0.0.0.0:50443|" config/headscale/config.yaml
+            
+            # Add TLS configuration (empty when using reverse proxy)
+            sed -i 's|^tls_cert_path:.*|tls_cert_path: ""|' config/headscale/config.yaml
+            sed -i 's|^tls_key_path:.*|tls_key_path: ""|' config/headscale/config.yaml
             sed -i "s|^unix_socket:.*|unix_socket: /var/run/headscale/headscale.sock|" config/headscale/config.yaml
             sed -i "s|^  base_domain:.*|  base_domain: headscale.local|" config/headscale/config.yaml
             sed -i 's|^  path: ""|  path: /etc/headscale/acl.json|' config/headscale/config.yaml
@@ -1065,12 +1067,26 @@ if [ "$USE_HEADSCALE" = true ]; then
         else
             print_warning "Failed to download config template, creating basic config..."
             # Fallback to basic config
+            # Determine correct server_url based on reverse proxy configuration
+            if [ "$USE_TRAEFIK" = true ] && [ "$USE_SSL" = true ]; then
+                HEADSCALE_SERVER_URL="https://$HEADSCALE_DOMAIN"
+            elif [ "$USE_TRAEFIK" = true ]; then
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+            elif [ "$USE_NGINX" = true ]; then
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN"
+            else
+                HEADSCALE_SERVER_URL="http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP"
+            fi
+            
             cat > config/headscale/config.yaml << HEADSCALE_EOF
-server_url: http://$HEADSCALE_DOMAIN:$HEADSCALE_EXTERNAL_HTTP
+server_url: $HEADSCALE_SERVER_URL
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
 grpc_listen_addr: 0.0.0.0:50443
 grpc_allow_insecure: false
+
+tls_cert_path: ""
+tls_key_path: ""
 
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
@@ -1239,7 +1255,7 @@ NGINX_EOF
             cat >> config/nginx/headscale.conf << 'NGINX_EOF'
     # Headscale UI at /web path
     location /web {
-        proxy_pass http://headscale_ui_backend/web/;
+        proxy_pass http://headscale_ui_backend$request_uri;
         proxy_http_version 1.1;
         
         proxy_set_header Host $host;
@@ -1357,7 +1373,7 @@ else
 fi
 
 if [ "$USE_HEADSCALE" = true ]; then
-    echo "   sudo ufw allow $HEADSCALE_WIREGUARD_PORT/udp   # WireGuard"
+    echo "   sudo ufw allow 3478/udp        # STUN (Headscale DERP)"
     if [ "$REVERSE_PROXY" = "none" ]; then
         echo "   sudo ufw allow $HEADSCALE_EXTERNAL_HTTP/tcp   # Headscale API"
         if [ "$USE_HEADSCALE_UI" = true ]; then
