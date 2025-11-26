@@ -852,9 +852,6 @@ if [ "$USE_HEADSCALE" = true ]; then
     restart: unless-stopped
     read_only: true
     
-    profiles:
-      - headscale
-    
     command: serve
     
     tmpfs:
@@ -931,9 +928,6 @@ COMPOSE_EOF
     container_name: headscale-ui
     restart: unless-stopped
     
-    profiles:
-      - headscale
-    
     environment:
       - TZ=UTC
       - HS_SERVER=http://headscale:8080
@@ -1003,9 +997,6 @@ COMPOSE_EOF
     image: tailscale/tailscale:latest
     container_name: barcode-central-tailscale
     restart: unless-stopped
-    
-    profiles:
-      - headscale
     
     hostname: barcode-central-server
     
@@ -1297,7 +1288,7 @@ tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.stat
 echo "[$(date)] Waiting for tailscaled to be ready..."
 RETRIES=10
 while [ $RETRIES -gt 0 ]; do
-    if tailscale status >/dev/null 2>&1; then
+    if tailscale debug daemon >/dev/null 2>&1; then
         echo "[$(date)] ✓ Tailscale daemon is ready"
         break
     fi
