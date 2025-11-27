@@ -39,7 +39,7 @@ echo "Headscale Route Management"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# List all routes
+# List all routes (Headscale v0.27+ syntax)
 print_info "Current routes:"
 echo ""
 docker exec headscale headscale routes list
@@ -83,11 +83,12 @@ while true; do
             
             # Get all route IDs that are not enabled
             ROUTE_IDS=$(docker exec headscale headscale routes list 2>/dev/null | grep "false" | awk '{print $1}' || echo "")
-            
+
             if [ -z "$ROUTE_IDS" ]; then
                 print_warning "No routes to enable"
             else
                 for ROUTE_ID in $ROUTE_IDS; do
+                    # Headscale v0.27+ syntax: routes enable -r <id>
                     if docker exec headscale headscale routes enable -r "$ROUTE_ID" 2>/dev/null; then
                         print_success "Enabled route $ROUTE_ID"
                     else
@@ -110,6 +111,7 @@ while true; do
                 continue
             fi
             
+            # Headscale v0.27+ syntax
             if docker exec headscale headscale routes enable -r "$ROUTE_ID" 2>/dev/null; then
                 print_success "Enabled route $ROUTE_ID"
             else

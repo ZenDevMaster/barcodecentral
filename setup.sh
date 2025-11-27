@@ -1671,8 +1671,8 @@ print_info "Step 6/6: Checking Headscale UI configuration..."
 if grep -q "HEADSCALE_UI_ENABLED=true" .env 2>/dev/null; then
     print_info "Headscale UI is enabled, generating API key..."
     
-    # Create API key - newer versions output format: just the key on last line
-    API_KEY=$(docker exec headscale headscale apikeys create --expiration 90d 2>&1 | \
+    # Create API key - Headscale v0.27+ syntax: apikeys create -e 90d
+    API_KEY=$(docker exec headscale headscale apikeys create -e 90d 2>&1 | \
         tail -1 | \
         tr -d '[:space:]' || true)
     
