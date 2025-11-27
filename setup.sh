@@ -747,6 +747,10 @@ COMPOSE_EOF
 if [ "$USE_HEADSCALE" = true ]; then
     cat >> docker-compose.yml << 'COMPOSE_EOF'
       - headscale-network
+    
+    depends_on:
+      tailscale:
+        condition: service_started
 COMPOSE_EOF
 fi
 
@@ -1219,6 +1223,13 @@ set -e
 
 echo "[$(date)] Starting barcode-central with Tailscale routing configuration..."
 
+# Check if running as root (needed for route configuration)
+if [ "$(id -u)" -ne 0 ]; then
+    echo "[$(date)] ERROR: This entrypoint must run as root to configure routes"
+    echo "[$(date)] Continuing without routing configuration..."
+    exec "$@"
+fi
+
 # Wait for Docker networking to stabilize
 # This ensures DNS resolution is available
 sleep 3
@@ -1231,7 +1242,7 @@ if [ -n "$TAILSCALE_IP" ]; then
     
     # Add route to Tailscale mesh network (100.64.0.0/10)
     # This is the standard Tailscale IP range
-    if ip route add 100.64.0.0/10 via $TAILSCALE_IP 2>/dev/null; then
+    if ip route add 100.64.0.0/10 via $TAILSCALE_IP 2>&1; then
         echo "[$(date)] ✓ Added route: 100.64.0.0/10 via $TAILSCALE_IP"
     else
         echo "[$(date)] Route 100.64.0.0/10 already exists or failed to add"
@@ -1242,7 +1253,7 @@ if [ -n "$TAILSCALE_IP" ]; then
     if [ -n "$ADVERTISED_ROUTES" ]; then
         echo "[$(date)] Adding routes for advertised subnets..."
         for ROUTE in $ADVERTISED_ROUTES; do
-            if ip route add $ROUTE via $TAILSCALE_IP 2>/dev/null; then
+            if ip route add $ROUTE via $TAILSCALE_IP 2>&1; then
                 echo "[$(date)] ✓ Added route: $ROUTE via $TAILSCALE_IP"
             else
                 echo "[$(date)] Route $ROUTE already exists or failed to add"
@@ -1256,16 +1267,22 @@ if [ -n "$TAILSCALE_IP" ]; then
     
     echo "[$(date)] ✓ Routing configuration complete"
 else
-    echo "[$(date)] ERROR: Could not resolve Tailscale container IP"
+    echo "[$(date)] WARNING: Could not resolve Tailscale container IP"
     echo "[$(date)] DNS lookup for 'barcode-central-tailscale' failed"
     echo "[$(date)] Continuing without Tailscale routing..."
 fi
 
-echo "[$(date)] Executing application: $@"
+# Drop privileges and execute application as appuser
+echo "[$(date)] Dropping privileges to appuser and starting application: $@"
 
-# Execute the original application command
-# This passes through to gunicorn or whatever was specified in CMD
-exec "$@"
+# Use gosu if available, otherwise su-exec, otherwise fallback to su
+if command -v gosu >/dev/null 2>&1; then
+    exec gosu appuser "$@"
+elif command -v su-exec >/dev/null 2>&1; then
+    exec su-exec appuser "$@"
+else
+    exec su -s /bin/bash appuser -c "exec $*"
+fi
 WRAPPER_EOF
     
     chmod +x docker-entrypoint-wrapper.sh

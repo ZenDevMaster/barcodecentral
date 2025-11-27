@@ -32,8 +32,13 @@ RUN mkdir -p logs previews templates_zpl && \
     chown -R appuser:appuser /app && \
     chmod -R 755 /app
 
-# Switch to non-root user
-USER appuser
+# Install gosu for privilege dropping in entrypoint
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/* && \
+    gosu nobody true
+
+# DO NOT switch to non-root user here - entrypoint needs root for routing
+# The entrypoint wrapper will drop privileges to appuser after configuring routes
 
 # Expose port
 EXPOSE 5000
