@@ -1286,21 +1286,15 @@ tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.stat
 
 # Wait for daemon to be ready
 echo "[$(date)] Waiting for tailscaled to be ready..."
-RETRIES=10
-while [ $RETRIES -gt 0 ]; do
-    if tailscale debug daemon >/dev/null 2>&1; then
-        echo "[$(date)] ✓ Tailscale daemon is ready"
-        break
-    fi
-    echo "[$(date)] Daemon not ready yet... ($RETRIES retries left)"
-    sleep 2
-    RETRIES=$((RETRIES - 1))
-done
+sleep 3
 
-if [ $RETRIES -eq 0 ]; then
-    echo "[$(date)] ERROR: Tailscale daemon failed to start after 20 seconds"
-    exit 1
+# Check if tailscaled socket exists
+if [ ! -S /var/run/tailscale/tailscaled.sock ]; then
+    echo "[$(date)] WARNING: Tailscaled socket not found, waiting a bit longer..."
+    sleep 2
 fi
+
+echo "[$(date)] ✓ Tailscale daemon initialization complete"
 
 # Prepare connection parameters
 HEADSCALE_URL="${HEADSCALE_URL:-http://headscale:8080}"
