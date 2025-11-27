@@ -35,9 +35,18 @@ echo ""
 # Create user if it doesn't exist
 docker exec headscale headscale users create barcode-central 2>/dev/null || true
 
+# Get the user ID for barcode-central (Headscale v0.27+ requires numeric ID)
+USER_ID=$(docker exec headscale headscale users list 2>/dev/null | grep barcode-central | awk '{print $1}')
+
+if [ -z "$USER_ID" ]; then
+    echo "Error: Could not find user 'barcode-central'"
+    echo "Check Headscale users: docker exec headscale headscale users list"
+    exit 1
+fi
+
 # Generate pre-auth key (Headscale v0.27+ syntax)
-# Command format: headscale preauthkeys create -e 90d -u barcode-central --reusable
-AUTHKEY=$(docker exec headscale headscale preauthkeys create -e 90d -u barcode-central --reusable 2>&1 | tail -1 | tr -d '[:space:]')
+# Command format: headscale preauthkeys create -e 90d -u <USER_ID> --reusable
+AUTHKEY=$(docker exec headscale headscale preauthkeys create -e 90d -u "$USER_ID" --reusable 2>&1 | tail -1 | tr -d '[:space:]')
 
 if [ -z "$AUTHKEY" ] || [ ${#AUTHKEY} -lt 20 ]; then
     echo "Error: Failed to generate auth key"
