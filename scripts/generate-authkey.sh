@@ -36,7 +36,8 @@ echo ""
 docker exec headscale headscale users create barcode-central 2>/dev/null || true
 
 # Get the user ID for barcode-central (Headscale v0.27+ requires numeric ID)
-USER_ID=$(docker exec headscale headscale users list 2>/dev/null | grep barcode-central | awk '{print $1}')
+# Strip ANSI color codes from output using sed
+USER_ID=$(docker exec headscale headscale users list 2>/dev/null | grep barcode-central | awk '{print $1}' | sed 's/\x1b\[[0-9;]*m//g' | tr -d '[:space:]')
 
 if [ -z "$USER_ID" ]; then
     echo "Error: Could not find user 'barcode-central'"

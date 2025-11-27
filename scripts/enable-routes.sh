@@ -49,9 +49,10 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Check if there are any routes to enable
-PENDING_ROUTES=$(docker exec headscale headscale nodes list-routes 2>/dev/null | grep -c "false" || echo "0")
+# Strip any whitespace/newlines from the count
+PENDING_ROUTES=$(docker exec headscale headscale nodes list-routes 2>/dev/null | grep -c "false" | tr -d '\n' || echo "0")
 
-if [ "$PENDING_ROUTES" -eq 0 ]; then
+if [ "$PENDING_ROUTES" -eq 0 ] 2>/dev/null; then
     print_success "No pending routes to enable"
     echo ""
     print_info "All routes are already enabled or no routes advertised yet"
